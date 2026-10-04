@@ -1651,6 +1651,8 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 .b2-name{font-size:16px;font-weight:800;color:#241b16}
 .b2-presence{margin-left:auto;flex:none;font-size:12px;display:flex;align-items:center;gap:6px;color:#5c4f45}
 .b2-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
+.b2-dot-doing{background:#2e7d4f}.b2-dot-blocked{background:#b03a2e}.b2-dot-wait{background:#9a6b1e}
+.b2-dot-decide{background:#6b4fa1}.b2-dot-done{background:#6b7280}.b2-dot-unknown{background:#998a7f}
 .b2-main{border-top:1px solid #eadfd2;padding-top:10px;min-width:0}
 .b2-label{font-size:11px;letter-spacing:.06em;color:#998a7f;font-weight:800;margin-bottom:6px}
 .b2-task-title{font-size:14px;font-weight:750;line-height:1.55;color:#241b16;overflow-wrap:anywhere}
