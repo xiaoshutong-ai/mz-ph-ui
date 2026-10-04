@@ -540,6 +540,8 @@ function syncSrAgentSelection(){
     const active=button.dataset.agent===_srAgentSelected;
     button.classList.toggle("is-selected",active);
     button.setAttribute("aria-pressed",active?"true":"false");
+    const card=button.closest(".b3-seat-card");
+    if(card) card.classList.toggle("is-selected",active);
   });
 }
 function renderSrAgentPersonal(id){
