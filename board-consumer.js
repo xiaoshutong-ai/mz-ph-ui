@@ -155,12 +155,22 @@ function presenceOf(tasksKnown, tasks){
   return ["零任务", "#6b7280"];
 }
 
+/* per-seat STALE：沿用 AGENT_OPS_FALLBACK_MS=1h 语义（旧表一致） */
+function seatStaleHtml(row, now){
+  const t = Date.parse(row.updated_at), age = now - t;
+  const note = !Number.isFinite(t) ? "STALE · 时间未核验"
+    : age < 0 ? "STALE · 来源时间异常"
+    : age >= 3600000 ? "STALE · 数据超过1小时" : "";
+  return note ? ' <span class="b2-stale">'+esc(note)+'</span>' : "";
+}
+
 /* 总览：六席卡片。rows 为已校验快照行；seatNames 如 {bi:"笔",...} */
-function renderOverview(rows, seatNames, snapshotMeta){
+function renderOverview(rows, seatNames, snapshotMeta, nowMs){
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
   const byId = new Map((rows || []).map(r => [r.id, r]));
   let html = '<div class="b2-grid">';
   for(const id of Object.keys(seatNames)){
-    html += renderCard(id, seatNames[id], byId.get(id));
+    html += renderCard(id, seatNames[id], byId.get(id), now);
   }
   html += '</div>';
   if(snapshotMeta){
@@ -169,7 +179,7 @@ function renderOverview(rows, seatNames, snapshotMeta){
   return html;
 }
 
-function renderCard(id, name, row){
+function renderCard(id, name, row, now){
   const openBtn = '<button type="button" class="b2-goto" data-agent="'+esc(id)+'">个人页 →</button>';
   const head = '<div class="b2-card-head"><div class="b2-avatar">'+esc(name)+'</div>'
     + '<div class="b2-who"><div class="b2-name">'+esc(name)+'</div></div>'
@@ -198,7 +208,7 @@ function renderCard(id, name, row){
       + '<div class="b2-more"><div class="b2-label">进展 / 阻塞</div>'
       + '<div class="b2-text">'+esc(parsed.text || "未提供说明")+'</div></div>'
       + '<div class="b2-foot"><div class="b2-counts">'+esc(row.status || "未知")+'</div>'+openBtn+'</div>'
-      + '<div class="b2-times">来源 '+esc(row.updated_at || "未核验")+'</div></div>';
+      + '<div class="b2-times">来源 '+esc(row.updated_at || "未核验")+seatStaleHtml(row, now)+'</div></div>';
   }
   // v1
   const {tasksKnown, tasks, checked_at, source} = parsed.data;
@@ -225,7 +235,7 @@ function renderCard(id, name, row){
       + '<div class="b2-foot"><div class="b2-counts">'
       + SECTIONS.filter(k => counts[k]).map(k => esc(SECTION_LABEL[k])+' <b>'+counts[k]+'</b>').join(" · ")
       + '</div>'+openBtn+'</div>'
-      + '<div class="b2-times">检查 '+esc(checked_at || row.updated_at || "未核验")
+      + '<div class="b2-times">检查 '+esc(checked_at || row.updated_at || "未核验")+seatStaleHtml(row, now)
       + (source ? ' · 来源 '+esc(source) : '') + '</div>';
   }
   return '<div class="b2-card">' + head.replace('__PRESENCE__',
