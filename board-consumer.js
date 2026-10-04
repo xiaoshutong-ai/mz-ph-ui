@@ -284,12 +284,13 @@ function renderOverview(rows,seatNames,snapshotMeta,nowMs){
   const byId=new Map((rows||[]).map(r=>[r.id,r]));
   const summary=overviewSummary(rows,seatNames,now);
   const seats=Object.keys(seatNames).length;
+  const attention=summary.staleSeats>0||summary.unknownSeats>0;
   const summaryHtml=
     '<section class="b3-summary" aria-label="全院态势">'
     + '<div class="b3-summary-heading"><div><span class="b3-kicker">全院态势</span><h3>六席一览</h3></div>'
-    + '<span class="b3-summary-fresh '+(summary.staleSeats?"watch":"good")+'">'+(summary.staleSeats?"有席位数据过期":"数据整体新鲜")+'</span></div>'
+    + '<span class="b3-summary-fresh '+(attention?"watch":"good")+'">'+(attention?"部分席位待核验":"数据整体新鲜")+'</span></div>'
     + '<div class="b3-metrics">'
-    + '<div class="b3-metric"><span>正常上报</span><strong>'+summary.freshSeats+'<small>/'+seats+'</small></strong></div>'
+    + '<div class="b3-metric"><span>近期更新</span><strong>'+summary.freshSeats+'<small>/'+seats+'</small></strong></div>'
     + '<div class="b3-metric"><span>当前任务</span><strong>'+summary.totalTasks+'</strong></div>'
     + '<div class="b3-metric doing"><span>进行中</span><strong>'+summary.totalCounts.doing+'</strong></div>'
     + '<div class="b3-metric blocked"><span>受阻</span><strong>'+summary.totalCounts.blocked+'</strong></div>'
