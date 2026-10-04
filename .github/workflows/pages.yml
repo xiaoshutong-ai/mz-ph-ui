@@ -43,7 +43,10 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          cp -- index.html workspace.html account.html studyroom.html devices.html style.css entry.js account.js app.js .nojekyll _site/\n          if [ -f board-consumer.js ]; then\n            cp -- board-consumer.js _site/\n          fi
+          cp -- index.html workspace.html account.html studyroom.html devices.html style.css entry.js account.js app.js .nojekyll _site/
+          if [ -f board-consumer.js ]; then
+            cp -- board-consumer.js _site/
+          fi
           if [ -d updates ]; then
             cp -R -- updates _site/
           fi
