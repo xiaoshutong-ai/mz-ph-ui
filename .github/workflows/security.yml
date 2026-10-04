@@ -441,7 +441,7 @@ jobs:
           ):
               if forbidden_studyroom_marker in studyroom:
                   raise SystemExit("StudyRoom public secret boundary violated: " + forbidden_studyroom_marker)
-          if 'value="MUSE"' not in studyroom or 'value="API"' not in studyroom:
+          if not re.search(r"value=['\"]MUSE['\"]", studyroom) or not re.search(r"value=['\"]API['\"]", studyroom):
               raise SystemExit("StudyRoom runtime mode controls missing")
 
           if 'id="projectSelect" disabled' in workspace:
