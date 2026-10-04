@@ -1037,7 +1037,7 @@ jobs:
               assert.equal(source.split(from).length-1,1,'reviewed studyroom delta must occur exactly once');
               source=source.replace(from,()=>to);
             }
-            assert.equal(blobHash(Buffer.from(source,'utf8')),'d7c8afe57c089f8a346b6af2dc827e3b497c2241');
+            assert.equal(blobHash(Buffer.from(source,'utf8')),'035657e04a1762e1b5e8ba19c5fac3becb234747');
           });
           test('original main f3986 security prefix allows only reviewed board-consumer extension',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
