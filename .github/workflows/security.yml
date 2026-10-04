@@ -1057,15 +1057,39 @@ jobs:
               assert.ok(!ws.includes(marker),'generic workspace must not embed StudyRoom board: '+marker);
             }
           });
-          test('original main f3986 security prefix allows only reviewed board-consumer extension',()=>{
+          test('original main f3986 security prefix allows only reviewed frontend extensions',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
             const board='board-'+'consumer.js';
+            const avatarBlock=`          character_assets = {
+              "assets/characters/bi.png": "a9dba9b4714f3fdcd2005c805cc4a389f7d0387f",
+              "assets/characters/mo.png": "6a383eaf342d46dcbad7daf0dc70508fee280318",
+              "assets/characters/zhi.png": "1ae56784b32d50ce9efbdfded0e9c315c886111a",
+              "assets/characters/yan.png": "1346f38b0e4449f4fe0e43f9f8081fffd11ae523",
+              "assets/characters/juan.png": "4bc232cbfb237baed8a96c0fb14607930f4557b4",
+              "assets/characters/xia.png": "4039caeacf3e449e412b95f0422af39d137350b8",
+          }
+`;
+            const avatarReadBlock=`              if rel in character_assets:
+                  data = path.read_bytes()
+                  if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+                      raise SystemExit("approved character asset is not PNG: " + rel)
+                  git_blob = hashlib.sha1(
+                      b"blob " + str(len(data)).encode("ascii") + b"\\0" + data
+                  ).hexdigest()
+                  if git_blob != character_assets[rel]:
+                      raise SystemExit("StudyRoom character asset drifted from approved App source: " + rel)
+                  continue
+`;
             const allowedDeltas=[
               ['Path("app.js"), Path("'+board+'"), Path("README.md")','Path("app.js"), Path("README.md")'],
               ['".github/workflows/security.yml", "status-public.js", "devices.html", "'+board+'",','".github/workflows/security.yml", "status-public.js", "devices.html",'],
+              ['          import hashlib\n',''],
+              [avatarBlock,''],
+              ['          } | set(character_assets)','          }'],
+              [avatarReadBlock,''],
             ];
             for(const [from,to] of allowedDeltas){
-              assert.equal(source.split(from).length-1,1,'reviewed board-consumer security delta must occur exactly once');
+              assert.equal(source.split(from).length-1,1,'reviewed frontend security delta must occur exactly once');
               source=source.replace(from,to);
             }
             assert.equal(blobHash(Buffer.from(source).subarray(0,36879)),'206a6d172c8f66bea68d345547c9447edfeb320b');
