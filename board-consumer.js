@@ -339,6 +339,8 @@ renderAgentStatusOps = function(rows){
   box.innerHTML = BoardConsumer.renderOverview(rows, AGENT_SEAT_NAMES, null);
   const meta = document.getElementById("agentStatusOpsMeta");
   if(meta) meta.textContent = "PARTIAL · 小书童团队当前上报；不是完整任务清单，不据此判定真实心跳、失联或交付。";
+  const es = document.getElementById("agentPersonalEntryState");
+  if(es) es.textContent = "PARTIAL · 六席当前上报已加载，点击席位查看。";
 };
 
 /* 个人：v2 五栏（v1 JSON）/ 旧文本单任务 / 非法 v1 安全降级 */
