@@ -428,6 +428,10 @@ jobs:
               'Owner 信任 Muse 设备',
               '匣固定 API',
               '跟随 Provider Hub',
+              'Character Contract v1',
+              '主对话 · 原话直通',
+              '旁聊天 · SOUL/Memory',
+              'muse_transport:transport',
           ):
               if marker not in studyroom:
                   raise SystemExit("StudyRoom six-seat runtime surface missing: " + marker)
@@ -443,6 +447,8 @@ jobs:
                   raise SystemExit("StudyRoom public secret boundary violated: " + forbidden_studyroom_marker)
           if not re.search(r"value=['\"]MUSE['\"]", studyroom) or not re.search(r"value=['\"]API['\"]", studyroom):
               raise SystemExit("StudyRoom runtime mode controls missing")
+          if not re.search(r"value=['\"]MAIN['\"]", studyroom) or not re.search(r"value=['\"]SIDE['\"]", studyroom):
+              raise SystemExit("StudyRoom Muse transport controls missing")
 
           if 'id="projectSelect" disabled' in workspace:
               raise SystemExit("project selector must be driven by authorized memberships")
