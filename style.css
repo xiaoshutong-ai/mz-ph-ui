@@ -1685,5 +1685,6 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 .b2-fields dd a{color:#684936;font-weight:700;text-decoration:none}
 .b2-fields dd a:hover{text-decoration:underline}
 .b2-fnote{display:block;font-size:12px;color:#998a7f;margin-top:2px}
-.b2-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.b2-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
+.b2-stale{color:#b03a2e;font-weight:800}
 @media(max-width:640px){.b2-fields{grid-template-columns:1fr}.b2-fields dt{margin-top:6px}}
