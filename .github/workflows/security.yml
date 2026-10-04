@@ -862,7 +862,7 @@ jobs:
             schema:'xia-team-board/v1',
             inventory_state:'partial',
             tasks:[
-              {id:'demo-main',sec:'doing',main:true,title:'中文版视觉重构',status:'in_progress',stage:'final_review',priority:'high',next:'完成独立复核',checked:new Date(now).toISOString()},
+              {id:'demo-main',sec:'doing',main:true,title:'中文版视觉重构',status:'in_progress',scope:'中文优先、状态可视化',owr:'匣 / 匣 / 笔',stage:'final_review',evidence:'正式 Gate PASS',priority:'high',next:'完成独立复核',checked:new Date(now).toISOString()},
               {id:'demo-blocked',sec:'blocked',title:'等待产品决定',status:'blocked',blocker:'等待确认',checked:new Date(now).toISOString()}
             ],
             checked_at:new Date(now).toISOString(),
