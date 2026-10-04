@@ -1623,3 +1623,20 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 @media(prefers-reduced-motion:reduce){
   .steward-daily-card{animation:none!important} } /* 六席状态（公开脱敏视图 + Hub 全细节视图） */ .agent-card .agent-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px} .agent-card .agent-head strong{font-family:"Noto Serif SC","Songti SC",serif;font-size:17px} .agent-card .agent-task{margin:0 0 8px;color:#4a3f35;font-size:14px;line-height:1.6;min-height:44px} .agent-card .agent-time{margin:0} .agent-detail{margin:8px 0 0;color:#6b5d52;font-size:13px;line-height:1.65;white-space:pre-wrap} .agent-links{margin:6px 0 0;font-size:12px} .agent-links a{color:#7a5c3e;margin-right:10px} .badge.ok{background:#e6f2e9;border-color:#bcd8c2;color:#3f7450} .badge.bad{background:#faece8;border-color:#e6c8c0;color:#9a4d42} .agent-table{width:100%;border-collapse:collapse;font-size:13px} .agent-table th,.agent-table td{text-align:left;padding:10px 12px;border-bottom:1px solid #e8ddd0;vertical-align:top} .agent-table th{font-weight:600;color:#5c4637;background:#faf6f0;white-space:nowrap} @media screen{ .agent-table td.task{max-width:320px}
 }
+/* Keep the five-column team board scrollable inside narrow viewports. */
+.agent-table-wrap{max-width:100%;overflow-x:auto}
+
+/* 六席看板刷新控制：手动刷新 + 可见时1小时兜底 */
+.agent-ops-actions{display:flex;align-items:center;gap:14px;flex-shrink:0}
+
+/* 个人看板（准备中）：六席可点击 + 五栏契约；数据未接入，只放诚实空态 */
+.agent-seat{background:none;border:0;padding:0;font:inherit;font-weight:700;color:#7a5c3e;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.agent-seat:hover{color:#5c4637}
+.agent-personal-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.agent-personal-col{background:#faf6f0;border:1px solid #e8ddd0;border-radius:10px;padding:12px}
+.agent-personal-col h3{margin:0 0 8px;font-size:14px;color:#5c4637}
+.agent-personal-seats{display:flex;flex-wrap:wrap;gap:8px}
+.agent-personal-task{padding:10px 0;border-top:1px solid #e8ddd0;overflow-wrap:anywhere}
+.agent-personal-task h4{margin:0 0 8px;font-size:14px}
+.agent-personal-task p{margin:6px 0;font-size:12px}
+@media(max-width:900px){.agent-personal-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
