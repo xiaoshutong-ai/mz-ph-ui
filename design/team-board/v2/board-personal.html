@@ -117,15 +117,19 @@ function goalHtml(g){
 }
 function renderMember(key){
   const m = BOARD.members.find(x=>x.key===key) || BOARD.members[0];
-  const tasks = m.tasks || [];
+  const known = m.tasks != null;
+  const tasks = known ? m.tasks : [];
   document.getElementById('mName').innerHTML = `${esc(m.name)} <span style="font-size:14px;color:var(--muted);font-family:inherit">${esc(m.login)} · ${esc(m.role)}</span>`;
   document.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on', b.dataset.k===m.key));
   if(location.hash !== '#'+m.key) history.replaceState(null,'','#'+m.key);
   let html = '';
   for(const [sec, title, hint] of SECTIONS){
     const ts = tasks.filter(t=>t.sec===sec);
-    html += `<div class="section"><div class="section-head"><h2>${esc(title)}</h2><span class="n">${ts.length} 项</span><span class="hint">${esc(hint)}</span></div>`;
-    if(!ts.length) html += `<div class="empty-box">空 —— 该成员当前在此栏无任务（显式空状态，非数据缺失）</div>`;
+    const nlabel = known ? `${ts.length} 项` : '未知';
+    html += `<div class="section"><div class="section-head"><h2>${esc(title)}</h2><span class="n">${nlabel}</span><span class="hint">${esc(hint)}</span></div>`;
+    if(!ts.length) html += known
+      ? `<div class="empty-box">空 —— 已确认该成员当前在此栏无任务</div>`
+      : `<div class="empty-box">未接入 —— 该成员任务数据未接入（数量未知）</div>`;
     for(const t of ts){
       const tags = (t.tag && t.tag.length===2) ? `<span class="state-tag ${esc(t.tag[1])}">${esc(t.tag[0])}</span>` : '';
       html += `<div class="task"><div class="task-top"><div class="task-title">${esc(t.title)}${tags}</div><span class="pill ${esc(t.scls)}">${esc(t.status)}</span></div><dl class="fields">`;
@@ -146,7 +150,7 @@ const sw = document.getElementById('switcher');
 for(const m of BOARD.members){
   const b = document.createElement('button');
   b.className = 'sw'; b.dataset.k = m.key;
-  b.innerHTML = `${esc(m.name)}<span class="cnt">${(m.tasks||[]).length} 项</span>`;
+  b.innerHTML = `${esc(m.name)}<span class="cnt">${m.tasks != null ? m.tasks.length + ' 项' : '未知'}</span>`;
   b.onclick = ()=>renderMember(m.key);
   sw.appendChild(b);
 }

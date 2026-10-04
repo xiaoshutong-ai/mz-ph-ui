@@ -116,9 +116,9 @@ function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 function presence(m){
-  const tasks = m.tasks || [];
-  if(!tasks.length) return ['未接入','var(--muted)'];
-  const s = new Set(tasks.map(t=>t.sec));
+  if(m.tasks == null) return ['未接入','var(--muted)'];
+  if(!m.tasks.length) return ['零任务','var(--gray)'];
+  const s = new Set(m.tasks.map(t=>t.sec));
   if(s.has('blocked')) return ['阻塞','var(--red)'];
   if(s.has('doing')) return ['实施中','var(--green)'];
   if(s.has('wait')) return ['等待','var(--amber)'];
@@ -127,19 +127,34 @@ function presence(m){
 }
 const grid = document.getElementById('grid');
 for(const m of BOARD.members){
-  const tasks = m.tasks || [];
   const card = document.createElement('div');
   card.className='card';
-  if(!tasks.length){
+  if(m.tasks == null){
     card.innerHTML = `
     <div class="card-head">
       <div class="avatar">${esc(m.name)}</div>
       <div class="who"><div class="name">${esc(m.name)} <span class="login">· ${esc(m.login)}</span></div><div class="role">${esc(m.role)}</div></div>
       <div class="presence"><i class="dot" style="background:var(--muted)"></i>未接入</div>
     </div>
-    <div class="empty-box">空 —— 该成员当前无有效任务（显式空态，非数据缺失）</div>
+    <div class="empty-box">未接入 —— 该成员任务数据未接入，数量未知（不是"零任务"确认）</div>
     <div class="card-foot">
-      <div class="counts">—</div>
+      <div class="counts">数量未知</div>
+      <a class="goto" href="board-personal.html#${esc(m.key)}">个人页 →</a>
+    </div>`;
+    grid.appendChild(card);
+    continue;
+  }
+  const tasks = m.tasks;
+  if(!tasks.length){
+    card.innerHTML = `
+    <div class="card-head">
+      <div class="avatar">${esc(m.name)}</div>
+      <div class="who"><div class="name">${esc(m.name)} <span class="login">· ${esc(m.login)}</span></div><div class="role">${esc(m.role)}</div></div>
+      <div class="presence"><i class="dot" style="background:var(--gray)"></i>零任务</div>
+    </div>
+    <div class="empty-box">空 —— 已确认该成员当前无有效任务</div>
+    <div class="card-foot">
+      <div class="counts">0 项</div>
       <a class="goto" href="board-personal.html#${esc(m.key)}">个人页 →</a>
     </div>`;
     grid.appendChild(card);
