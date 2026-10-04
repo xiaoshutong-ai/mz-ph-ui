@@ -133,9 +133,31 @@
 
 <!-- 六席状态 -->
 <div id="srAgents" class="sr-section">
-<p class="muted">团队看板已迁移至 workspace 新版</p>
-<p style="margin-top:12px"><a href="workspace.html#agentStatusOps" onclick="try{sessionStorage.setItem('mz_ops_project','xiaoshutong')}catch(e){}" style="font-size:16px">前往小书童 · 六人团队看板 →</a></p>
-<p class="muted" style="margin-top:8px">总览六席当前上报，点击席位查看个人看板。</p>
+<div class="section-title">
+  <div>
+    <h2>六席实时看板</h2>
+    <p class="muted">治理仓状态板 → 结构化同步 → 当前六席上报。总览和个人页共用同一份 xia-team-board/v1 数据。</p>
+  </div>
+  <button id="srAgentRefresh" class="sr-btn" type="button">刷新</button>
+</div>
+<p id="srAgentMeta" class="muted">等待首次读取</p>
+<div id="srAgentState" class="status" role="status" aria-live="polite">等待首次读取</div>
+<div id="srAgentOverview" style="margin-top:14px"></div>
+
+<div id="srAgentPersonal" class="card hidden" style="margin-top:16px">
+  <div class="section-title">
+    <div>
+      <h3 id="srAgentPersonalTitle">个人实时看板</h3>
+      <p id="srAgentPersonalMeta" class="muted">当前成员上报，不代表历史全量任务。</p>
+    </div>
+    <div class="row">
+      <button id="srAgentPersonalRefresh" class="sr-btn" type="button">刷新</button>
+      <button id="srAgentPersonalClose" class="sr-btn" type="button">关闭</button>
+    </div>
+  </div>
+  <div id="srAgentPersonalState" class="status" role="status" aria-live="polite">等待选择席位</div>
+  <div id="srAgentPersonalContent" style="margin-top:12px"></div>
+</div>
 </div>
 
 </div>
@@ -143,8 +165,7 @@
 </section>
 </div>
 
-<script>
-const SB_URL = "https://ftcyyvyoowkctbupzkct.supabase.co";
+<script src="./board-consumer.js"></script>\n<script>\nconst SB_URL = "https://ftcyyvyoowkctbupzkct.supabase.co";
 const SB_ANON = "sb_publishable_vsp2sdBNKkqGh97lTvJRFg_Bmk7fNdO";
 
 let _srAccessToken = null;
@@ -198,6 +219,7 @@ document.querySelectorAll("[data-sr]").forEach(b => b.addEventListener("click", 
   document.querySelectorAll(".sr-section").forEach(s => s.classList.remove("active"));
   document.getElementById(b.dataset.sr).classList.add("active");
   if(b.dataset.sr==="srChat") loadStudyroomChatConfig();
+  if(b.dataset.sr==="srAgents") loadAgents();
 }));
 
 // 总览
@@ -475,10 +497,102 @@ async function resetStudyroomCharacter(cid){
   }
 }
 
-// 六席状态
-async function loadAgents(){ /* 看板已迁移至 workspace.html（board-consumer.js 渲染）；旧表已移除，此函数保留为空避免 refreshAll 报错 */ return; }
+// 六席实时看板：直接留在水墨书院，复用 board-consumer.js 与 agent_status。
+const SR_AGENT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
+let _srAgentRows=[],_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
 
-function refreshAll(){ loadOverview(); loadDevices(); loadPresetCodes(); loadAgents(); }
+function validateSrAgentRows(value){
+  if(!Array.isArray(value)) throw new Error("状态数据格式错误");
+  const seen=new Set(),allowed=new Set(Object.keys(SR_AGENT_NAMES));
+  return value.map(row=>{
+    if(!row||typeof row!=="object"||Array.isArray(row)||!allowed.has(row.id)||seen.has(row.id))
+      throw new Error("状态数据未核验");
+    seen.add(row.id);
+    for(const key of ["status","task_name","task_detail","updated_at"]){
+      if(row[key]!=null&&typeof row[key]!=="string") throw new Error("状态字段未核验");
+    }
+    return {
+      id:row.id,
+      status:row.status||"",
+      task_name:row.task_name||"",
+      task_detail:row.task_detail||"",
+      updated_at:row.updated_at||""
+    };
+  });
+}
+
+function srAgentStateText(row){
+  if(!row) return "UNAVAILABLE · 此席位未取得当前上报，不能确认任务为空。";
+  const parsed=BoardConsumer.parseTaskDetail(row.task_detail);
+  if(parsed.kind==="invalid") return "UNAVAILABLE · 上报格式未核验。";
+  const stamp=Date.parse(row.updated_at),stale=!Number.isFinite(stamp)||stamp>Date.now()||Date.now()-stamp>=3600000;
+  return "PARTIAL · 当前成员上报，不代表历史全量任务。"+(stale?" STALE · 来源已过期或时间未核验。":"");
+}
+
+function renderSrAgentPersonal(id){
+  _srAgentSelected=id;
+  const row=_srAgentRows.find(item=>item.id===id)||null;
+  document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人实时看板";
+  document.getElementById("srAgentPersonalState").textContent=srAgentStateText(row);
+  document.getElementById("srAgentPersonalMeta").textContent="水墨书院 · 来源读取时间："+(_srAgentReadAt?new Date(_srAgentReadAt).toISOString():"未核验");
+  document.getElementById("srAgentPersonalContent").innerHTML=BoardConsumer.renderPersonal(
+    id,SR_AGENT_NAMES[id]||id,row,_srAgentReadAt
+  );
+  document.getElementById("srAgentPersonal").classList.remove("hidden");
+}
+
+async function loadAgents(){
+  if(_srAgentsLoading) return;
+  _srAgentsLoading=true;
+  const btn=document.getElementById("srAgentRefresh");
+  const pbtn=document.getElementById("srAgentPersonalRefresh");
+  if(btn) btn.disabled=true;
+  if(pbtn) pbtn.disabled=true;
+  try{
+    const value=await api("/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id");
+    const rows=validateSrAgentRows(value);
+    _srAgentRows=rows;
+    _srAgentReadAt=Date.now();
+    document.getElementById("srAgentOverview").innerHTML=BoardConsumer.renderOverview(
+      rows,SR_AGENT_NAMES,"水墨书院 · 当前六席上报",_srAgentReadAt
+    );
+    document.getElementById("srAgentMeta").textContent=
+      "PARTIAL · 当前成员上报，不代表完整任务清单或真实交付；完成情况仍以 Goal/PR/CI 证据为准。";
+    document.getElementById("srAgentState").textContent="已读取 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleString("zh-CN",{hour12:false});
+    if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
+  }catch(e){
+    _srAgentRows=[];
+    _srAgentReadAt=0;
+    document.getElementById("srAgentOverview").innerHTML="";
+    document.getElementById("srAgentMeta").textContent="UNAVAILABLE · 当前六席状态读取失败。";
+    document.getElementById("srAgentState").textContent="读取失败："+e.message;
+    document.getElementById("srAgentPersonal").classList.add("hidden");
+  }finally{
+    _srAgentsLoading=false;
+    if(btn) btn.disabled=false;
+    if(pbtn) pbtn.disabled=false;
+  }
+}
+
+document.getElementById("srAgentOverview").addEventListener("click",event=>{
+  const button=event.target&&event.target.closest?event.target.closest("[data-agent]"):null;
+  if(button&&button.dataset.agent) renderSrAgentPersonal(button.dataset.agent);
+});
+document.getElementById("srAgentRefresh").addEventListener("click",()=>loadAgents());
+document.getElementById("srAgentPersonalRefresh").addEventListener("click",()=>loadAgents());
+document.getElementById("srAgentPersonalClose").addEventListener("click",()=>{
+  _srAgentSelected="";
+  document.getElementById("srAgentPersonal").classList.add("hidden");
+});
+function ensureSrAgentTimer(){
+  if(_srAgentTimer) return;
+  _srAgentTimer=setInterval(()=>{
+    const section=document.getElementById("srAgents");
+    if(!document.hidden&&section&&section.classList.contains("active")) loadAgents();
+  },3600000);
+}
+
+function refreshAll(){ loadOverview(); loadDevices(); loadPresetCodes(); loadAgents(); ensureSrAgentTimer(); }
 
 (function(){
   getToken().then(t=>{
