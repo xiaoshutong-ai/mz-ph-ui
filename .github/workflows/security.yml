@@ -36,7 +36,7 @@ jobs:
           from pathlib import Path
           import re
 
-          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("README.md"), Path("SECURITY.md")]
+          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("board-consumer.js"), Path("README.md"), Path("SECURITY.md")]
           text = "\n".join(p.read_text(encoding="utf-8") for p in files if p.exists())
           root = Path("index.html").read_text(encoding="utf-8")
           workspace = Path("workspace.html").read_text(encoding="utf-8")
@@ -75,7 +75,7 @@ jobs:
               "account.js",
               "app.js",
               ".github/workflows/pages.yml",
-              ".github/workflows/security.yml", "status-public.js", "devices.html",
+              ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
           }
           allowed_prefixes = (
               "updates/",
@@ -1021,7 +1021,19 @@ jobs:
           function blobHash(b){return crypto.createHash('sha1').update('blob '+b.length+'\0').update(b).digest('hex');}
           // Exact main f3986e8 blob identities; no local/private manifest is required in CI.
           test('main studyroom stays byte-for-byte unchanged',()=>{assert.equal(blobHash(fs.readFileSync(path.join(root,'studyroom.html'))),'d7c8afe57c089f8a346b6af2dc827e3b497c2241');});
-          test('original main f3986 security and syntax gate are exact prefix',()=>{assert.equal(blobHash(fs.readFileSync(path.join(root,'.github/workflows/security.yml')).subarray(0,36879)),'206a6d172c8f66bea68d345547c9447edfeb320b');});
+          test('original main f3986 security prefix allows only reviewed board-consumer extension',()=>{
+            let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+            const board='board-'+'consumer.js';
+            const allowedDeltas=[
+              ['Path("app.js"), Path("'+board+'"), Path("README.md")','Path("app.js"), Path("README.md")'],
+              ['".github/workflows/security.yml", "status-public.js", "devices.html", "'+board+'",','".github/workflows/security.yml", "status-public.js", "devices.html",'],
+            ];
+            for(const [from,to] of allowedDeltas){
+              assert.equal(source.split(from).length-1,1,'reviewed board-consumer security delta must occur exactly once');
+              source=source.replace(from,to);
+            }
+            assert.equal(blobHash(Buffer.from(source).subarray(0,36879)),'206a6d172c8f66bea68d345547c9447edfeb320b');
+          });
           test('runtime boundary and refresh steps are main-push-only',()=>{const w=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');for(const name of ['Verify hourly and manual team-board refresh','Verify team-board project and session boundaries','Verify shared current-snapshot personal board']){const a=w.indexOf('      - name: '+name);assert.ok(a>=0,'Runtime step exists: '+name);const step=w.slice(a).split('\n      - name: ')[0],b=step.indexOf('\n        run: |');assert.ok(b>=0);assert.ok(step.slice(0,b).split('\n').includes("        if: github.event_name == 'push' && github.ref == 'refs/heads/main'"));}});
 
           for(const which of ['auth','api'])test('independent: '+which+' JSON completion after relogin rejects',async()=>{const x=await populated(),d=deferred();x.queue.push(async()=>({status:200,ok:true,json:()=>d.promise}));const old=(which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(e=>e);for(let i=0;i<5;i++)await Promise.resolve();x.h.newSession();d.resolve({private:'OLD'});assert.equal((await old).code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');});
