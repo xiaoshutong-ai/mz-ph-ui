@@ -1023,9 +1023,10 @@ jobs:
           test('main studyroom stays byte-for-byte unchanged',()=>{assert.equal(blobHash(fs.readFileSync(path.join(root,'studyroom.html'))),'d7c8afe57c089f8a346b6af2dc827e3b497c2241');});
           test('original main f3986 security prefix allows only reviewed board-consumer extension',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
+            const board='board-'+'consumer.js';
             const allowedDeltas=[
-              ['Path("app.js"), Path("board-consumer.js"), Path("README.md")','Path("app.js"), Path("README.md")'],
-              ['".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",','".github/workflows/security.yml", "status-public.js", "devices.html",'],
+              ['Path("app.js"), Path("'+board+'"), Path("README.md")','Path("app.js"), Path("README.md")'],
+              ['".github/workflows/security.yml", "status-public.js", "devices.html", "'+board+'",','".github/workflows/security.yml", "status-public.js", "devices.html",'],
             ];
             for(const [from,to] of allowedDeltas){
               assert.equal(source.split(from).length-1,1,'reviewed board-consumer security delta must occur exactly once');
