@@ -1093,12 +1093,13 @@ jobs:
               '                  continue',
               '',
             ].join('\n');
+            const avatarUnion='          } | set('+'character_assets)';
             const reviewedDeltas=[
               ['Path("app.js"), Path("'+board+'"), Path("README.md")','Path("app.js"), Path("README.md")','board-consumer source scan'],
               ['".github/workflows/security.yml", "status-public.js", "devices.html", "'+board+'",','".github/workflows/security.yml", "status-public.js", "devices.html",','board-consumer allowlist'],
               [avatarImport,originalImport,'avatar hashlib import'],
               [avatarDeclaration,'','avatar exact allowlist declaration'],
-              ['          } | set(character_assets)','          }','avatar allowlist union'],
+              [avatarUnion,'          }','avatar allowlist union'],
               [avatarValidation,'','avatar binary pin validation'],
             ];
             for(const [from,to,label] of reviewedDeltas){
