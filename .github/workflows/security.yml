@@ -1020,7 +1020,25 @@ jobs:
           test('successful manual recovery after 403 restores hourly fallback',async()=>{const x=await populated();x.queue.push(async()=>response(403,{}));await x.h.auth('/auth/v1/user').catch(()=>{});assert.equal(x.timers.size,0);x.queue.push(async()=>response(200,row));await x.h.read();assert.ok(x.node('agentStatusOpsList').innerHTML.includes('FIXTURE_PROJECT_A'));assert.equal(x.timers.size,1);});
           function blobHash(b){return crypto.createHash('sha1').update('blob '+b.length+'\0').update(b).digest('hex');}
           // Exact main f3986e8 blob identities; no local/private manifest is required in CI.
-          test('main studyroom stays byte-for-byte unchanged',()=>{assert.equal(blobHash(fs.readFileSync(path.join(root,'studyroom.html'))),'d7c8afe57c089f8a346b6af2dc827e3b497c2241');});
+          test('main studyroom permits only reviewed board-entry migration',()=>{
+            let source=fs.readFileSync(path.join(root,'studyroom.html'),'utf8');
+            // Reverse only the two exact PR73@82192f reviewed changes; all other bytes stay pinned.
+            const reviewedDeltas=[
+              [
+                "<div id=\"srAgents\" class=\"sr-section\">\n<p class=\"muted\">团队看板已迁移至 workspace 新版</p>\n<p style=\"margin-top:12px\"><a href=\"workspace.html#agentStatusOps\" onclick=\"try{sessionStorage.setItem('mz_ops_project','xiaoshutong')}catch(e){}\" style=\"font-size:16px\">前往小书童 · 六人团队看板 →</a></p>\n<p class=\"muted\" style=\"margin-top:8px\">总览六席当前上报，点击席位查看个人看板。</p>\n</div>",
+                "<div id=\"srAgents\" class=\"sr-section\">\n<p class=\"muted\">数据来自治理仓状态板同步</p>\n<table class=\"sr-table\" style=\"margin-top:12px\"><thead><tr>\n<th>席位</th><th>状态</th><th>任务</th><th>更新时间</th>\n</tr></thead><tbody id=\"srAgentList\"><tr><td colspan=\"4\" class=\"muted\">加载中…</td></tr></tbody></table>\n</div>"
+              ],
+              [
+                "async function loadAgents(){ /* 看板已迁移至 workspace.html（board-consumer.js 渲染）；旧表已移除，此函数保留为空避免 refreshAll 报错 */ return; }",
+                "async function loadAgents(){\n  try{\n    const rows = await api(\"/rest/v1/agent_status?select=*&order=id\");\n    const order = [\"bi\",\"mo\",\"zhi\",\"yan\",\"juan\",\"xia\"];\n    rows.sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id));\n    const names = {bi:\"笔\", mo:\"墨\", zhi:\"纸\", yan:\"砚\", juan:\"卷\", xia:\"匣\"};\n    document.getElementById(\"srAgentList\").innerHTML = rows.map(r => {\n      const badge = r.status === \"工作中\" ? '<span class=\"sr-badge ok\">工作中</span>'\n        : r.status === \"blocked\" ? '<span class=\"sr-badge bad\">受阻</span>'\n        : '<span class=\"sr-badge\">空闲</span>';\n      return \"<tr><td><strong>\"+esc(names[r.id]||r.id)+\"</strong></td><td>\"+badge+\"</td>\"\n        + \"<td>\"+esc(r.task_name||\"—\")+\"</td>\"\n        + \"<td>\"+esc(r.updated_at?new Date(r.updated_at).toLocaleString(\"zh-CN\",{hour12:false}):\"—\")+\"</td></tr>\";\n    }).join(\"\");\n  }catch(e){ document.getElementById(\"srAgentList\").innerHTML = '<tr><td colspan=\"4\" class=\"muted\">加载失败</td></tr>'; }\n}"
+              ],
+            ];
+            for(const [from,to] of reviewedDeltas){
+              assert.equal(source.split(from).length-1,1,'reviewed studyroom delta must occur exactly once');
+              source=source.replace(from,()=>to);
+            }
+            assert.equal(blobHash(Buffer.from(source,'utf8')),'d7c8afe57c089f8a346b6af2dc827e3b497c2241');
+          });
           test('original main f3986 security prefix allows only reviewed board-consumer extension',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
             const board='board-'+'consumer.js';

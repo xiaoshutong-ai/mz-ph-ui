@@ -133,10 +133,9 @@
 
 <!-- 六席状态 -->
 <div id="srAgents" class="sr-section">
-<p class="muted">数据来自治理仓状态板同步</p>
-<table class="sr-table" style="margin-top:12px"><thead><tr>
-<th>席位</th><th>状态</th><th>任务</th><th>更新时间</th>
-</tr></thead><tbody id="srAgentList"><tr><td colspan="4" class="muted">加载中…</td></tr></tbody></table>
+<p class="muted">团队看板已迁移至 workspace 新版</p>
+<p style="margin-top:12px"><a href="workspace.html#agentStatusOps" onclick="try{sessionStorage.setItem('mz_ops_project','xiaoshutong')}catch(e){}" style="font-size:16px">前往小书童 · 六人团队看板 →</a></p>
+<p class="muted" style="margin-top:8px">总览六席当前上报，点击席位查看个人看板。</p>
 </div>
 
 </div>
@@ -477,22 +476,7 @@ async function resetStudyroomCharacter(cid){
 }
 
 // 六席状态
-async function loadAgents(){
-  try{
-    const rows = await api("/rest/v1/agent_status?select=*&order=id");
-    const order = ["bi","mo","zhi","yan","juan","xia"];
-    rows.sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id));
-    const names = {bi:"笔", mo:"墨", zhi:"纸", yan:"砚", juan:"卷", xia:"匣"};
-    document.getElementById("srAgentList").innerHTML = rows.map(r => {
-      const badge = r.status === "工作中" ? '<span class="sr-badge ok">工作中</span>'
-        : r.status === "blocked" ? '<span class="sr-badge bad">受阻</span>'
-        : '<span class="sr-badge">空闲</span>';
-      return "<tr><td><strong>"+esc(names[r.id]||r.id)+"</strong></td><td>"+badge+"</td>"
-        + "<td>"+esc(r.task_name||"—")+"</td>"
-        + "<td>"+esc(r.updated_at?new Date(r.updated_at).toLocaleString("zh-CN",{hour12:false}):"—")+"</td></tr>";
-    }).join("");
-  }catch(e){ document.getElementById("srAgentList").innerHTML = '<tr><td colspan="4" class="muted">加载失败</td></tr>'; }
-}
+async function loadAgents(){ /* 看板已迁移至 workspace.html（board-consumer.js 渲染）；旧表已移除，此函数保留为空避免 refreshAll 报错 */ return; }
 
 function refreshAll(){ loadOverview(); loadDevices(); loadPresetCodes(); loadAgents(); }
 
