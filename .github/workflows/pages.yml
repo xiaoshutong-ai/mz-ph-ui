@@ -14,6 +14,7 @@ on:
       - "account.js"
       - "app.js"
       - "board-consumer.js"
+      - "assets/characters/**"
       - ".nojekyll"
       - "updates/**"
       - ".github/workflows/pages.yml"
@@ -47,6 +48,13 @@ jobs:
           if [ -f board-consumer.js ]; then
             cp -- board-consumer.js _site/
           fi
+          if [ -d assets/characters ]; then
+            mkdir -p _site/assets/characters
+            for name in bi mo zhi yan juan xia; do
+              test -f "assets/characters/$name.png"
+              cp -- "assets/characters/$name.png" _site/assets/characters/
+            done
+          fi
           if [ -d updates ]; then
             cp -R -- updates _site/
           fi
@@ -68,6 +76,14 @@ jobs:
               "board-consumer.js",
               ".nojekyll",
           }
+          allowed_character_assets = {
+              "assets/characters/bi.png",
+              "assets/characters/mo.png",
+              "assets/characters/zhi.png",
+              "assets/characters/yan.png",
+              "assets/characters/juan.png",
+              "assets/characters/xia.png",
+          }
           files = [path for path in root.rglob("*") if path.is_file()]
           for path in files:
               rel = path.relative_to(root).as_posix()
@@ -75,7 +91,7 @@ jobs:
                   raise SystemExit("symlink forbidden in Pages artifact: " + rel)
               if "/" not in rel and rel not in allowed_root:
                   raise SystemExit("unexpected Pages root file: " + rel)
-              if "/" in rel and not rel.startswith("updates/"):
+              if "/" in rel and not (rel.startswith("updates/") or rel in allowed_character_assets):
                   raise SystemExit("unexpected Pages subtree: " + rel)
               if path.stat().st_size > 1_000_000:
                   raise SystemExit("Pages file exceeds 1 MB: " + rel)
