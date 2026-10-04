@@ -36,7 +36,7 @@ jobs:
           from pathlib import Path
           import re
 
-          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("README.md"), Path("SECURITY.md")]
+          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("board-consumer.js"), Path("README.md"), Path("SECURITY.md")]
           text = "\n".join(p.read_text(encoding="utf-8") for p in files if p.exists())
           root = Path("index.html").read_text(encoding="utf-8")
           workspace = Path("workspace.html").read_text(encoding="utf-8")
@@ -75,7 +75,7 @@ jobs:
               "account.js",
               "app.js",
               ".github/workflows/pages.yml",
-              ".github/workflows/security.yml", "status-public.js", "devices.html",
+              ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
           }
           allowed_prefixes = (
               "updates/",
