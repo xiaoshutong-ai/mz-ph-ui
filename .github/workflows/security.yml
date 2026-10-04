@@ -794,6 +794,7 @@ jobs:
           node --check entry.js
           node --check account.js
           node --check app.js
+          node --check board-consumer.js
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -804,6 +805,41 @@ jobs:
           Path("/tmp/studyroom-inline.js").write_text(match.group(1), encoding="utf-8")
           PY
           node --check /tmp/studyroom-inline.js
+          node <<'NODE'
+          const assert=require('node:assert/strict');
+          const Board=require('./board-consumer.js');
+          const now=Date.now();
+          const detail=JSON.stringify({
+            schema:'xia-team-board/v1',
+            inventory_state:'partial',
+            tasks:[
+              {id:'demo-main',sec:'doing',main:true,title:'中文版视觉重构',status:'in_progress',stage:'final_review',priority:'high',next:'完成独立复核',checked:new Date(now).toISOString()},
+              {id:'demo-blocked',sec:'blocked',title:'等待产品决定',status:'blocked',blocker:'等待确认',checked:new Date(now).toISOString()}
+            ],
+            checked_at:new Date(now).toISOString(),
+            source:'governance#9'
+          });
+          const rows=[
+            {id:'bi',status:'in_progress',task_name:'demo',task_detail:detail,updated_at:new Date(now).toISOString()},
+            {id:'mo',status:'idle',task_name:'none',task_detail:JSON.stringify({schema:'xia-team-board/v1',inventory_state:'confirmed_empty',tasks:[],checked_at:new Date(now).toISOString()}),updated_at:new Date(now).toISOString()}
+          ];
+          const names={bi:'笔',mo:'墨',zhi:'纸',yan:'砚',juan:'卷',xia:'匣'};
+          const html=Board.renderOverview(rows,names,'水墨书院 · 当前六席上报',now)
+            + Board.renderPersonal('bi','笔',rows[0],now);
+          for(const marker of ['全院态势','当前主任务','个人态势','查看个人看板','查看完整信息','任务编号','范围与验收','负责人 / 实施 / 复核','当前阶段','验证证据','下一步','阻塞原因','进行中','受阻']){
+            assert.ok(html.includes(marker),'Chinese render marker missing: '+marker);
+          }
+          for(const marker of ['UNAVAILABLE ·','PARTIAL ·','STALE ·','task_id','owner / writer / reviewer','stage / activity','next action','dependencies','>in_progress<','>final_review<','>high<']){
+            assert.ok(!html.includes(marker),'mixed-language render leaked: '+marker);
+          }
+          assert.ok(html.includes('最终复核'),'stage token not localized');
+          assert.ok(html.includes('优先级 · 高'),'priority token not localized');
+          assert.ok(html.includes('aria-label="查看笔的个人看板"'),'seat action accessibility label missing');
+          const escaped=Board.renderPersonal('bi','笔',{...rows[0],task_detail:JSON.stringify({schema:'xia-team-board/v1',tasks:[{id:'x',sec:'doing',title:'<img src=x onerror=attack>',status:'in_progress'}]})},now);
+          assert.ok(!escaped.includes('<img src=x'),'task title escaping regressed');
+          assert.ok(escaped.includes('&lt;img'),'escaped task title missing');
+          console.log('BOARD_CHINESE_RENDER=PASS');
+          NODE
       - name: Verify hourly and manual team-board refresh
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # Execute only trusted main source. The fake clock/DOM is not a sandbox.
