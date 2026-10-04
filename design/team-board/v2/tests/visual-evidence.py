@@ -40,12 +40,21 @@ def main():
         def shot(name):
             m = send('Page.captureScreenshot', {'format': 'png', 'captureBeyondViewport': True, 'fromSurface': True})
             open(EV+name, 'wb').write(base64.b64decode(m['result']['data']))
+        cur_w = [1440]
         def viewport(w, h):
+            cur_w[0] = w
             send('Emulation.setDeviceMetricsOverride', {'width': w, 'height': h, 'deviceScaleFactor': 1, 'mobile': w < 700})
         def overflow_report():
-            return ev("""(()=>{const bad=[];document.querySelectorAll('.p-id').forEach(e=>{if(e.scrollWidth>e.clientWidth+1)bad.push(e.innerText.slice(0,20))});
-              const page=document.documentElement.scrollWidth>window.innerWidth+1;
-              return {pillOverflow:bad,pageOverflow:page}})()""")
+            return ev("""(()=>{const bad=[];document.querySelectorAll('.card').forEach(card=>{
+              const cs=getComputedStyle(card);
+              const contentRight=card.getBoundingClientRect().right-parseFloat(cs.paddingRight);
+              card.querySelectorAll('.p-id').forEach(e=>{
+                const r=e.getBoundingClientRect().right;
+                if(r>contentRight+1)bad.push(e.innerText.slice(0,24)+' over by '+(r-contentRight).toFixed(1)+'px');
+              });});
+              const de=document.documentElement;
+              return {pillOverflow:bad,pageOverflow:de.scrollWidth>de.clientWidth+1,
+                setW:SETW,clientW:de.clientWidth,innerW:window.innerWidth,scrollW:de.scrollWidth}})()""".replace('SETW', str(cur_w[0])))
         send('Page.enable'); send('Runtime.enable')
         ok = True
 

@@ -5,7 +5,10 @@
 
 ## visual-evidence.py（本轮新增）
 验证项（2026-10-04 全部 PASS）：
-1. 长 task_id（`mz-ph-ui/team-board/design-first/current-multitask-20261004`，59 字符）在桌面 1440px 与窄屏 390px 下不溢出（pill 与页面均无横向溢出）
+1. 长 task_id（`mz-ph-ui/team-board/design-first/current-multitask-20261004`，59 字符）在桌面 1440px 与窄屏 390px 下不溢出：
+   - 断言：pill 右边界 ≤ 卡片内容右边界（getBoundingClientRect，非 pill 自身 scrollWidth）
+   - 390px 记录：setW=390 / clientW=390 / innerW=390 / scrollW=390（四值一致，无横向溢出）
+   - 排版修复：`.p-id` 加 `max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere`，长 ID 在卡内换行
 2. 六人切换器：笔/墨/纸/砚/卷/匣逐个点击，标题与 `#hash` 均正确更新
 3. 返回导航：个人页面包屑返回总览；总览成员链接进入 `board-personal.html#zhi`
 4. 全程无 JS 报错
