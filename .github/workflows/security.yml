@@ -1135,7 +1135,15 @@ jobs:
            for(const stamp of [new Date(NOW-3600000).toISOString(),"invalid",new Date(NOW+1000).toISOString()])test("source time stale "+stamp,async()=>{const x=harness(),r=rows();r[0].updated_at=stamp;x.queue.push(async()=>response(200,r));await x.h.open("bi");assert(x.node("agentPersonalState").textContent.includes("STALE"));assert(x.node("agentStatusOpsList").innerHTML.includes("STALE"));});
            test("snapshot text is escaped and never converted to approval/evidence",async()=>{const x=harness(),r=rows();r[0].task_name='<img src=x onerror="attack">';r[0].task_detail="<script>attack</script>";x.queue.push(async()=>response(200,r));await x.h.open("bi");assert(!html(x).includes("<img"));assert(!html(x).includes("<script>"));assert(html(x).includes("&lt;"));assert(!/APPROVED|head：|批准来源|核对证据/.test(html(x)));});
            test("same-session network error retains only stale snapshot",async()=>{const x=await populated();x.queue.push(async()=>{throw Error("offline")});await x.h.refresh();assert(html(x).includes("SYNTHETIC_bi"));assert(x.node("agentPersonalState").textContent.includes("STALE"));});
-           test("workspace removes history and approved-task contract",async()=>{assert(!/agentPersonal_(approved_backlog|pending_decision|recent_completed|archived)/.test(workspace));for(const id of names)assert(workspace.includes('data-agent="'+id+'"'));assert(!app.includes('api("agent_board"'));assert(!workspace.includes('class="agent-personal-cols"'));});
+           test("StudyRoom owns the current-snapshot board without history/approval scope",async()=>{
+             assert(!/agentPersonal_(approved_backlog|pending_decision|recent_completed|archived)/.test(studyroom));
+             for(const marker of ['id="srAgentOverview"','id="srAgentPersonal"','id="srAgentPersonalContent"','BoardConsumer.renderOverview(','BoardConsumer.renderPersonal(','/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id'])
+               assert(studyroom.includes(marker),"StudyRoom current-board marker missing: "+marker);
+             assert(!app.includes('api("agent_board"'));
+             for(const marker of ['id="agentStatusOps"','id="agentPersonalEntry"','id="agentPersonalBoard"'])
+               assert(!workspace.includes(marker),"Workspace still embeds StudyRoom board: "+marker);
+             assert(!workspace.includes('class="agent-personal-cols"'));
+           });
            test("main Character Contract and Muse transport remain intact",async()=>{for(const s of ["Character Contract v1","主对话 · 原话直通","旁聊天 · SOUL/Memory","muse_transport:transport"])assert(studyroom.includes(s),s);assert(workflow.includes("StudyRoom Muse transport controls missing"));});
            for(const [name,fn] of tests){try{await fn();results.push({name,status:"PASS"});}catch(e){results.push({name,status:"FAIL",message:e.message});}}
            return results;
