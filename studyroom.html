@@ -113,7 +113,7 @@
 <!-- security-contract runtime values: value="API" value="MUSE" -->
 <div id="srChat" class="sr-section">
 <div class="sr-chat-note">
-普通设备技术上强制走服务端大模型 API。只有先把一台设备标记为“Owner 信任 Muse 设备”，笔/墨/纸/砚/卷才会出现 Muse 选项；匣始终固定 API。Muse 会连接你的开发 Muse，因此此信任只应给你本人控制的设备。模型密钥继续由 Provider Hub / Vault 管理，本页不接触密钥。
+普通设备技术上强制走服务端大模型 API。只有 Owner 信任设备才可使用 Muse；匣始终固定 API。Muse 主对话只透传用户原话，不注入水墨书院 SOUL/Memory；旁聊天才使用 Character Contract v1（SOUL + StudyRoom Memory）并与开发主会话隔离。旁聊天运行器未就绪前不可选择。模型密钥继续由 Provider Hub / Vault 管理，本页不接触密钥。
 </div>
 <div class="sr-chat-toolbar">
 <label for="srChatDevice"><strong>设备</strong></label>
@@ -126,8 +126,8 @@
 <div id="srChatStatus" class="muted" style="margin:8px 0"></div>
 <div class="sr-chat-wrap">
 <table class="sr-table"><thead><tr>
-<th>席位</th><th>运行模式</th><th>API Provider</th><th>模型覆盖</th><th>Memory</th><th>SOUL 覆盖</th><th>操作</th>
-</tr></thead><tbody id="srChatConfigList"><tr><td colspan="7" class="muted">请选择设备</td></tr></tbody></table>
+<th>席位</th><th>运行模式</th><th>Muse 会话</th><th>API Provider</th><th>模型覆盖</th><th>Memory</th><th>SOUL 覆盖</th><th>Character Contract</th><th>操作</th>
+</tr></thead><tbody id="srChatConfigList"><tr><td colspan="9" class="muted">请选择设备</td></tr></tbody></table>
 </div>
 </div>
 
@@ -367,6 +367,10 @@ async function loadStudyroomChatConfig(){
       const model = String(c.api_model_override||"");
       const soul = String(c.soul_override||"");
       const defaultSoul = String(c.default_soul||c.soul||"");
+      const transport = String(c.muse_transport||"MAIN").toUpperCase();
+      const sideAvailable = c.muse_side_available === true;
+      const contract = c.character_contract || {};
+      const contractText = JSON.stringify(contract,null,2);
       return "<tr>"
         +"<td><strong>"+esc(c.display_name||cid)+"</strong><br><span class='muted'>"+esc(cid)+"</span>"
         +(c.has_override?"<br><span class='sr-badge warn'>设备覆盖</span>":"<br><span class='sr-badge ok'>默认</span>")+"</td>"
@@ -374,6 +378,10 @@ async function loadStudyroomChatConfig(){
           +"<option value='API'"+srSelected(mode,"API")+">API</option>"
           +(muse?"<option value='MUSE'"+srSelected(mode,"MUSE")+">Muse</option>":"")
           +"</select>"+(muse?"":"<div class='muted' style='font-size:11px'>"+(cid==="xia"?"匣固定 API":"需先启用 Owner Muse 信任")+"</div>")+"</td>"
+        +"<td><select id='srTransport-"+cid+"' "+(muse?"":"disabled")+">"
+          +"<option value='MAIN'"+srSelected(transport,"MAIN")+">主对话 · 原话直通</option>"
+          +"<option value='SIDE'"+srSelected(transport,"SIDE")+(sideAvailable?"":" disabled")+">旁聊天 · SOUL/Memory</option>"
+          +"</select><div class='muted' style='font-size:11px'>"+(sideAvailable?"可切换":"旁聊天运行器接入中")+"</div></td>"
         +"<td><select id='srProvider-"+cid+"'>"
           +"<option value='inherit'"+srSelected(provider,"inherit")+">跟随 Provider Hub</option>"
           +"<option value='zhipuai'"+srSelected(provider,"zhipuai")+">GLM / ZhipuAI</option>"
@@ -383,13 +391,14 @@ async function loadStudyroomChatConfig(){
         +"<td style='text-align:center'><input id='srMemory-"+cid+"' type='checkbox' style='width:auto' "+(c.memory_enabled!==false?"checked":"")+"><div class='muted' style='font-size:11px'>保存连续对话</div></td>"
         +"<td><textarea id='srSoul-"+cid+"' maxlength='6000' placeholder='留空=默认 SOUL'>"+esc(soul)+"</textarea>"
           +"<div class='muted' style='font-size:11px' title='"+esc(defaultSoul)+"'>默认："+esc(defaultSoul.slice(0,44))+(defaultSoul.length>44?"…":"")+"</div></td>"
+        +"<td><details><summary>Contract v"+esc(contract.contract_version||1)+"</summary><pre style='white-space:pre-wrap;max-width:320px;font-size:11px'>"+esc(contractText)+"</pre></details></td>"
         +"<td><button class='sr-btn primary' onclick=\"saveStudyroomCharacter('"+cid+"')\">保存</button>"
           +"<button class='sr-btn' onclick=\"resetStudyroomCharacter('"+cid+"')\">恢复默认</button></td>"
         +"</tr>";
-    }).join("") || '<tr><td colspan="7" class="muted">暂无配置</td></tr>';
+    }).join("") || '<tr><td colspan="9" class="muted">暂无配置</td></tr>';
     status.textContent = "当前设备："+String(cfg.device?.nickname||cfg.device?.device_name||deviceId);
   }catch(e){
-    tb.innerHTML = '<tr><td colspan="7" class="muted">读取失败</td></tr>';
+    tb.innerHTML = '<tr><td colspan="9" class="muted">读取失败</td></tr>';
     status.textContent = "读取失败："+e.message;
   }
 }
@@ -425,6 +434,7 @@ async function saveStudyroomCharacter(cid){
   const deviceId = document.getElementById("srChatDevice").value;
   if(!deviceId) return;
   const mode = document.getElementById("srMode-"+cid).value;
+  const transport = document.getElementById("srTransport-"+cid).value;
   const provider = document.getElementById("srProvider-"+cid).value;
   const model = document.getElementById("srModel-"+cid).value.trim();
   const soul = document.getElementById("srSoul-"+cid).value.trim();
@@ -436,6 +446,7 @@ async function saveStudyroomCharacter(cid){
       device_id:deviceId,
       character_id:cid,
       runtime_mode:mode,
+      muse_transport:transport,
       api_provider:provider,
       api_model:model,
       soul_override:soul,
