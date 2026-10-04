@@ -20,6 +20,23 @@ const FIELD_LABELS = [
   ["blocker","阻塞原因"],["priority","优先级"],["checked","核验时间"],["updated","更新时间"]
 ];
 
+const AVATAR_SRC = {
+  bi:"./assets/characters/bi.png",
+  mo:"./assets/characters/mo.png",
+  zhi:"./assets/characters/zhi.png",
+  yan:"./assets/characters/yan.png",
+  juan:"./assets/characters/juan.png",
+  xia:"./assets/characters/xia.png"
+};
+
+function avatarHtml(id,name){
+  const src = AVATAR_SRC[id];
+  if(!src) return '<span class="b3-seat-mark b3-seat-'+esc(id)+'" aria-hidden="true">'+esc(name)+'</span>';
+  return '<span class="b3-seat-mark b3-seat-'+esc(id)+'" aria-hidden="true">'
+    + '<img class="b3-seat-avatar" src="'+esc(src)+'" alt="" loading="lazy" decoding="async">'
+    + '</span>';
+}
+
 function esc(s){
   return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
@@ -313,7 +330,7 @@ function renderCard(id,name,row,now){
   const counts=countsOf(snap.tasks);
   const openBtn='<button type="button" class="b3-open-seat" data-agent="'+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">查看个人看板 <span aria-hidden="true">→</span></button>';
   const head='<div class="b3-seat-head">'
-    + '<div class="b3-seat-mark b3-seat-'+esc(id)+'">'+esc(name)+'</div>'
+    + avatarHtml(id,name)
     + '<div class="b3-seat-name"><strong>'+esc(name)+'</strong><span>'+dot(psec)+esc(presence)+'</span></div>'
     + '<span class="b3-fresh '+esc(f.key)+'">'+esc(f.label)+'</span>'
     + '</div>';
@@ -399,7 +416,7 @@ function renderPersonal(id,name,row,snapshotReadAt){
   const counts=countsOf(tasks);
   const [presence,psec]=presenceOf(tasksKnown,tasks,confirmedEmpty);
   const hero='<section class="b3-personal-hero">'
-    + '<div class="b3-personal-identity"><div class="b3-seat-mark b3-seat-'+esc(id)+'">'+esc(name)+'</div><div>'
+    + '<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div>'
     + '<span class="b3-kicker">个人态势</span><h3>'+esc(name)+' · 当前看板</h3><p>'+dot(psec)+esc(presence)+' · '+esc(f.label)+'</p></div></div>'
     + '<div class="b3-personal-metrics">'
     + '<div><span>任务</span><strong>'+((tasksKnown&&Array.isArray(tasks))?tasks.length:"—")+'</strong></div>'
