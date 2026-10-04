@@ -46,6 +46,36 @@ jobs:
           app = Path("app.js").read_text(encoding="utf-8")
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
+          style = Path("style.css").read_text(encoding="utf-8")
+
+          # The v3 board visual system is token-driven: raw colors live only in the
+          # #srAgents token declaration, never scattered through component rules.
+          v3_marker = "/* ===== 水墨书院实时看板 v3 · 中文视觉系统 ===== */"
+          v3_start = style.find(v3_marker)
+          token_start = style.find("#srAgents{", v3_start)
+          token_end = style.find("\n}", token_start)
+          if v3_start < 0 or token_start < 0 or token_end <= token_start:
+              raise SystemExit("StudyRoom v3 visual token boundary missing")
+          v3_token_block = style[token_start:token_end]
+          for token in (
+              "--sr-text:", "--sr-surface:", "--sr-border:", "--sr-jade:",
+              "--sr-danger:", "--sr-wait:", "--sr-decision:", "--sr-done:",
+              "--sr-seat-bi:", "--sr-seat-mo:", "--sr-seat-zhi:",
+              "--sr-seat-yan:", "--sr-seat-juan:", "--sr-seat-xia:",
+              "--sr-shadow:", "--sr-focus:",
+          ):
+              if token not in v3_token_block:
+                  raise SystemExit("StudyRoom semantic visual token missing: " + token)
+          v3_component_rules = style[token_end + 2:]
+          raw_component_colors = re.findall(
+              r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)",
+              v3_component_rules,
+          )
+          if raw_component_colors:
+              raise SystemExit(
+                  "StudyRoom component rules must consume semantic tokens; raw colors found: "
+                  + ", ".join(sorted(set(raw_component_colors)))
+              )
 
           # Water-Ink Academy board is Chinese-first at the presentation layer.
           board_start = studyroom.find('<div id="srAgents"')
