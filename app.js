@@ -27,6 +27,7 @@ let passwordSetupMode="";
 let backupTotpFactorId="";
 let opsMemberships=[];
 let selectedProjectKey=sessionStorage.getItem("mz_ops_project")||"mengzheng";
+let operationsProjectGeneration=0;
 let projectRuntimeSnapshot=null;
 let runtimeConsumerRawToken="";
 let stewardDashboardDays=30;
@@ -548,6 +549,7 @@ let operationsSessionGeneration=0;
 function clearOperationsSessionStorage(){
   operationsSessionGeneration++;
   operationsRefreshPromise=null;
+  clearAgentStatusOps();
   sessionStorage.removeItem(OPS_REFRESH_STORAGE_KEY);
   sessionStorage.removeItem(OPS_SESSION_STARTED_STORAGE_KEY);
 }
@@ -585,9 +587,20 @@ function acceptOperationsAuthSession(value,{resetAge=false}={}){
   return true;
 }
 
+function operationsAuthRequiredError(){
+  const error=new Error("身份验证失败或会话已失效");
+  error.code="AUTH_REQUIRED";
+  error.status=401;
+  return error;
+}
+
 async function performOperationsRefresh(){
   const refreshToken=readOperationsRefreshToken();
-  if(!refreshToken){token="";return false;}
+  if(!refreshToken){
+    token="";
+    setAuthStage("login");
+    throw operationsAuthRequiredError();
+  }
   const generation=operationsSessionGeneration;
 
   const response=await fetch(BASE+"/auth/v1/token?grant_type=refresh_token",{
@@ -607,13 +620,16 @@ async function performOperationsRefresh(){
     if(response.status===400||response.status===401||response.status===403){
       clearOperationsSessionStorage();
       token="";
+      setAuthStage("login");
+      throw operationsAuthRequiredError();
     }
     return false;
   }
   if(!acceptOperationsAuthSession(value)){
     clearOperationsSessionStorage();
     token="";
-    return false;
+    setAuthStage("login");
+    throw operationsAuthRequiredError();
   }
   return true;
 }
@@ -654,15 +670,22 @@ async function restoreOperationsSession(){
   }
 }
 
-async function authApi(path,method="GET",body=null,retry=true){
+function assertOperationsRequestCurrent(generation,projectContext=null){
+  if(generation!==operationsSessionGeneration){
+    const error=new Error("会话已变更，已忽略旧请求结果。");
+    error.code="STALE_SESSION";
+    throw error;
+  }
+  if(projectContext&&(projectContext.key!==selectedProjectKey||projectContext.generation!==operationsProjectGeneration)){
+    const error=new Error("项目已变更，已忽略旧请求结果。");
+    error.code="STALE_PROJECT";
+    throw error;
+  }
+}
+
+async function authApi(path,method="GET",body=null,retry=true,projectContext=null){
   const generation=operationsSessionGeneration;
-  const ensureCurrentSession=()=>{
-    if(generation!==operationsSessionGeneration){
-      const error=new Error("会话已变更，已忽略旧请求结果。");
-      error.code="STALE_SESSION";
-      throw error;
-    }
-  };
+  const ensureCurrentSession=()=>assertOperationsRequestCurrent(generation,projectContext);
   const response=await fetch(BASE+path,{
     method,
     headers:{
@@ -679,13 +702,15 @@ async function authApi(path,method="GET",body=null,retry=true){
   if(response.status===401&&retry){
     const refreshed=await refreshAccessTokenFromStoredSession();
     ensureCurrentSession();
-    if(refreshed)return authApi(path,method,body,false);
+    if(refreshed)return authApi(path,method,body,false,projectContext);
   }
   if(!response.ok){
     if(response.status===401){
       clearOperationsSessionStorage();
       token="";
+      setAuthStage("login");
     }
+    if(response.status===403)clearAgentStatusOps("权限不足，已清空看板详情。");
     const error=new Error(value?.msg||value?.message||value?.error_description||value?.error||"认证请求失败");
     error.status=response.status;
     throw error;
@@ -2956,7 +2981,17 @@ function applyOpsStatus(status){
   renderProjectSelection();
 }
 
-async function api(action,method="GET",body=null,query={},retry=true){
+async function api(action,method="GET",body=null,query={},retry=true,currentRequest=null){
+  const generation=operationsSessionGeneration;
+  const projectContext={key:selectedProjectKey,generation:operationsProjectGeneration};
+  const ensureCurrentContext=()=>{
+    assertOperationsRequestCurrent(generation,projectContext);
+    if(currentRequest&&!currentRequest()){
+      const error=new Error("读取已取消，已忽略旧结果。");
+      error.code="STALE_REQUEST";
+      throw error;
+    }
+  };
   const params=new URLSearchParams({action:String(action||"")});
   for(const [key,value] of Object.entries(query||{})){
     if(value!==undefined&&value!==null&&String(value)!=="")params.set(key,String(value));
@@ -2971,9 +3006,11 @@ async function api(action,method="GET",body=null,query={},retry=true){
   });
   let value={};
   try{value=await response.json()}catch(_e){}
+  ensureCurrentContext();
   if(response.status===401&&retry){
     const refreshed=await refreshAccessTokenFromStoredSession();
-    if(refreshed)return api(action,method,body,query,false);
+    ensureCurrentContext();
+    if(refreshed)return api(action,method,body,query,false,currentRequest);
   }
   if(response.status===401){
     clearOperationsSessionStorage();
@@ -2986,6 +3023,7 @@ async function api(action,method="GET",body=null,query={},retry=true){
     throw error;
   }
   if(!response.ok){
+    if(response.status===403)clearAgentStatusOps("权限不足，已清空看板详情。");
     const error=new Error(value.error||"请求失败");
     error.code=value.code||"REQUEST_FAILED";
     error.status=response.status;
@@ -3110,12 +3148,10 @@ let agentOpsGeneration=0;
 let agentOpsFailures=0;
 let agentOpsNextAttempt=0;
 let agentOpsLastSuccessAt=0;        /* 上次刷新成功时间戳：可见时1小时兜底用 */
-let agentOpsPendingRead=false;      /* pending读取需求：在途被隐藏盖住，或每次返回可见时登记；仅请求真正发起时消费 */
-let agentOpsTrack30s=false;         /* 可选临时跟踪30秒：默认关，需手动打开 */
+let agentOpsPendingRead=false;      /* 在途被隐藏时保留一次补读需求；仅请求真正发起时消费 */
 let agentOpsHourlyTimer=0;
-let agentOpsTrackTimer=0;
+let agentOpsProjectKey=selectedProjectKey;
 const AGENT_OPS_FALLBACK_MS=3600000; /* 可见时1小时兜底 */
-const AGENT_OPS_TRACK_MS=30000;      /* 可选临时跟踪间隔 */
 function escHtmlAgent(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function agentStatusBadge(status){
   const labels={"工作中":"工作中",in_progress:"工作中","空闲":"空闲",idle:"空闲",blocked:"受阻",needs_review:"待评审","未知":"未知"};
@@ -3129,7 +3165,7 @@ function renderAgentStatusOps(rows){
   box.innerHTML='<div class="agent-table-wrap"><table class="agent-table"><thead><tr><th>席位</th><th>自报状态</th><th>任务</th><th>进展 / 阻塞</th><th>来源时间（北京）</th></tr></thead><tbody>'+
     Object.entries(seats).map(([id,name])=>{
       const r=byId.get(id);
-      const seatBtn='<button type="button" class="agent-seat" data-agent="'+id+'" title="打开'+name+'的个人看板（准备中）">'+name+'</button>';
+      const seatBtn='<button type="button" class="agent-seat" data-agent="'+id+'" title="打开'+name+'的当前项目个人看板">'+name+'</button>';
       if(!r)return '<tr><td>'+seatBtn+'</td><td>未知</td><td>尚无上报</td><td>—</td><td>—</td></tr>';
       const t=Date.parse(r.updated_at),age=Date.now()-t;
       const stamp=Number.isFinite(t)?new Date(t).toLocaleString("zh-CN",{hour12:false,timeZone:"Asia/Shanghai"}):"时间未核验";
@@ -3140,20 +3176,23 @@ function renderAgentStatusOps(rows){
 }
 async function loadAgentStatusOps(){
   if(!token){clearAgentStatusOps();return;}
+  if(selectedProjectKey!=="xiaoshutong")return;
   if(agentOpsLoading||$("console").classList.contains("hidden")||document.hidden||Date.now()<agentOpsNextAttempt)return;
   const generation=agentOpsGeneration;
+  const projectContext={key:selectedProjectKey,generation:operationsProjectGeneration};
   agentOpsLoading=true;
   agentOpsPendingRead=false; /* pending补读：请求真正发起才消费；被退避/并发抑制时保留到下次允许执行 */
   const state=$("agentStatusOpsState"),btn=$("agentStatusOpsRefresh");
   if(btn)btn.disabled=true;
   try{
-    const rows=await authApi("/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id","GET");
+    const rows=await authApi("/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id","GET",null,true,projectContext);
     if(generation!==agentOpsGeneration||!token)return;
     if(!Array.isArray(rows))throw new Error("状态格式异常");
     renderAgentStatusOps(rows);
     agentOpsFailures=0;
     agentOpsNextAttempt=0;
     agentOpsLastSuccessAt=Date.now();
+    agentOpsEnsureTimers();
     state.textContent="刷新成功 · "+new Date().toLocaleString("zh-CN",{hour12:false,timeZone:"Asia/Shanghai"})+"（北京）；刷新不代表新交付。";
   }catch(e){
     if(generation===agentOpsGeneration){
@@ -3183,7 +3222,7 @@ async function loadAgentStatusOps(){
     }
   }
 }
-function clearAgentStatusOps(){
+function clearAgentStatusOps(stateMessage="等待登录"){
   agentOpsGeneration++;
   agentOpsLoading=false;
   agentOpsFailures=0;
@@ -3191,61 +3230,208 @@ function clearAgentStatusOps(){
   /* 真正退出清等待关系：新会话不被旧请求卡住 */
   agentOpsLastSuccessAt=0;
   agentOpsPendingRead=false;
-  agentOpsTrack30s=false;
-  const track=$("agentStatusOpsTrack30s");if(track)track.checked=false;
   agentOpsClearTimers();
-  closeAgentPersonalBoard(); /* 退出/失效时关闭个人板并重置标题 */
+  closeAgentPersonalBoard(stateMessage); /* 退出/失效时关闭个人板并重置标题 */
   const btn=$("agentStatusOpsRefresh");if(btn)btn.disabled=false;
   const box=$("agentStatusOpsList");if(box)box.innerHTML="";
-  const state=$("agentStatusOpsState");if(state)state.textContent="等待登录";
+  const meta=$("agentStatusOpsMeta");if(meta)meta.textContent="等待来源数据";
+  const state=$("agentStatusOpsState");if(state)state.textContent=stateMessage;
 }
 /* 个人看板关闭：清选择/详情并复位标题 */
-function closeAgentPersonalBoard(){
+function closeAgentPersonalBoard(message="选择席位；来源未全部接入。"){
+  agentPersonalGeneration++;
+  agentPersonalSelected="";
+  agentPersonalLoading=false;
+  agentPersonalLastSuccessAt=0;
+  agentPersonalPendingRead=false;
+  agentPersonalNextAttempt=0;
+  agentPersonalFailures=0;
+  agentPersonalRepository="";
+  clearAgentPersonalColumns();
   const panel=$("agentPersonalBoard");
   if(panel)panel.classList.add("hidden");
   const title=$("agentPersonalTitle");
   if(title)title.textContent="个人看板";
+  const meta=$("agentPersonalMeta");if(meta)meta.textContent="仅当前项目；不代表个人全部任务。";
+  const state=$("agentPersonalState");if(state)state.textContent=message;
+  const entry=$("agentPersonalEntryState");if(entry)entry.textContent=message;
+  const button=$("agentPersonalRefresh");if(button)button.disabled=false;
+}
+/* 个人板只消费单项目接口；producer 未验证，永不升级为 COMPLETE。 */
+const AGENT_SEAT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
+const AGENT_PERSONAL_COLUMNS={current:"当前",approved_backlog:"已批准待办",pending_decision:"待决",recent_completed:"近期完成（来源记录）",archived:"归档"};
+let agentPersonalSelected="",agentPersonalRepository="";
+let agentPersonalGeneration=0,agentPersonalLoading=false,agentPersonalLastSuccessAt=0;
+let agentPersonalPendingRead=false,agentPersonalNextAttempt=0,agentPersonalFailures=0;
+function agentPersonalProject(){
+  const project=membershipFor();
+  return project&&/^[a-z][a-z0-9_-]{1,63}$/.test(selectedProjectKey)
+    &&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(project.repository_full_name||"")?project:null;
+}
+function agentPersonalPanelReadable(){
+  return !!agentPersonalSelected&&!!token&&!document.hidden
+    &&!$("console").classList.contains("hidden")
+    &&!$("agentPersonalBoard").classList.contains("hidden")&&!!agentPersonalProject();
+}
+function clearAgentPersonalColumns(){
+  for(const key of Object.keys(AGENT_PERSONAL_COLUMNS)){
+    const node=$("agentPersonal_"+key);
+    if(node)node.innerHTML='<p class="muted">来源未接入或覆盖不完整，不能确认本栏没有任务。</p>';
+  }
+}
+function agentPersonalLink(value,repository,evidence=false){
+  if(typeof value!=="string"||value.length>1000)return false;
+  const source=/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(?:issues|pull)\/[1-9][0-9]*(?:#(?:issuecomment-|discussion_r|pullrequestreview-)[0-9]+)?$/;
+  const proof=/^https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/(?:actions\/runs\/[1-9][0-9]*|commit\/[0-9a-f]{40})$/;
+  const match=value.match(source)||(evidence?value.match(proof):null);
+  return !!match&&match[1]===repository;
+}
+function validateAgentPersonalBoard(value,agent,project,repository){
+  const object=x=>x!==null&&typeof x==="object"&&!Array.isArray(x);
+  const text=(x,max)=>typeof x==="string"&&x.length>0&&x.length<=max;
+  const sha=x=>x===null||(typeof x==="string"&&/^[0-9a-f]{40}$/.test(x));
+  const invalid=()=>{const error=new Error("个人板范围或格式未核验");error.code="PERSONAL_BOARD_INVALID";throw error;};
+  const b=value?.board;
+  if(value?.ok!==true||!object(b)||b.agent!==agent||b.scope?.project_key!==project||b.scope?.kind!=="single_project"
+    ||!["COMPLETE","PARTIAL","UNAVAILABLE"].includes(b.coverage)||!object(b.columns))return invalid();
+  const ids=new Set(),columns={};let count=0;
+  for(const key of Object.keys(AGENT_PERSONAL_COLUMNS)){
+    if(!Array.isArray(b.columns[key]))return invalid();
+    columns[key]=b.columns[key].map(t=>{
+      if(++count>500||!object(t)||t.agent!==agent||t.project_key!==project||t.column!==key
+        ||!text(t.task_id,240)||ids.has(t.task_id)||!text(t.title,300)||!agentPersonalLink(t.source_url,repository))return invalid();
+      ids.add(t.task_id);
+      const a=t.approval,e=t.evidence;
+      if(!object(a)||!["APPROVED","PENDING","REJECTED"].includes(a.status)||!text(a.reference,1000)
+        ||!(agentPersonalLink(a.reference,repository)||/^owner-message:[A-Za-z0-9_:.+-]{1,200}$/.test(a.reference))
+        ||!(a.approved_at===null||(typeof a.approved_at==="string"&&Number.isFinite(Date.parse(a.approved_at))))
+        ||(["current","approved_backlog","recent_completed"].includes(key)&&a.status!=="APPROVED")
+        ||!object(e)||!sha(e.head_sha)||!sha(e.checked_head_sha)||!["PASS","FAIL","NOT_RUN","STALE"].includes(e.status)
+        ||!(e.url===null||agentPersonalLink(e.url,repository,true)))return invalid();
+      let status=e.status;
+      if(["PASS","FAIL"].includes(status)&&(!e.head_sha||e.head_sha!==e.checked_head_sha))status="STALE";
+      else if(["PASS","FAIL"].includes(status)&&!e.url)status="NOT_RUN";
+      return {title:t.title,source_url:t.source_url,approval:{status:a.status,reference:a.reference,approved_at:a.approved_at},
+        evidence:{head_sha:e.head_sha,checked_head_sha:e.checked_head_sha,status,url:e.url}};
+    });
+  }
+  if(b.coverage==="UNAVAILABLE"&&count)return invalid();
+  const time=typeof b.snapshot_at==="string"?Date.parse(b.snapshot_at):NaN;
+  return {coverage:b.coverage==="UNAVAILABLE"?"UNAVAILABLE":"PARTIAL",columns,snapshot_at:Number.isFinite(time)?new Date(time).toISOString():null,
+    stale:b.stale!==false||!Number.isFinite(time)||time>Date.now()||Date.now()-time>=AGENT_OPS_FALLBACK_MS};
+}
+function renderAgentPersonalBoard(board){
+  const link=(url,label)=>'<a href="'+escHtmlAgent(url)+'" target="_blank" rel="noopener noreferrer">'+label+'</a>';
+  for(const key of Object.keys(AGENT_PERSONAL_COLUMNS)){
+    const node=$("agentPersonal_"+key);if(!node)continue;
+    node.innerHTML=board.columns[key].length?board.columns[key].map(t=>{
+      const a=t.approval,e=t.evidence;
+      const approval=agentPersonalLink(a.reference,agentPersonalRepository)?link(a.reference,"批准来源"):escHtmlAgent(a.reference);
+      return '<article class="agent-personal-task"><h4>'+escHtmlAgent(t.title)+'</h4><p>'+link(t.source_url,"任务来源")+'</p>'
+        +'<p>批准：'+escHtmlAgent(a.status)+' · '+approval+'</p>'
+        +'<p>证据：'+escHtmlAgent(e.status)+(e.url?' · '+link(e.url,"核对证据"):' · 未接入')+'</p>'
+        +'<p class="field-note">head：'+escHtmlAgent(e.head_sha||"未核验")+'<br>检查 head：'+escHtmlAgent(e.checked_head_sha||"未核验")+'</p></article>';
+    }).join(""):'<p class="muted">来源未接入或覆盖不完整，不能确认本栏没有任务。</p>';
+  }
+  $("agentPersonalState").textContent=board.coverage+" · 来源未全部接入；不证明全量任务或实际交付。"+(board.stale?" STALE · 快照已过期或时间未核验。":"");
+  $("agentPersonalEntryState").textContent=$("agentPersonalState").textContent;
+  $("agentPersonalMeta").textContent="项目："+selectedProjectKey+" · 仅此项目；快照来源时间："+(board.snapshot_at||"未核验")+" · 本次读取："+new Date().toISOString();
+}
+function openAgentPersonalBoard(id){
+  if(!Object.hasOwn(AGENT_SEAT_NAMES,id)||!token||!agentPersonalProject()||$("console").classList.contains("hidden")){
+    closeAgentPersonalBoard("UNAVAILABLE · 未核验项目访问或仓库映射。");return Promise.resolve();
+  }
+  if(agentPersonalSelected===id&&!$("agentPersonalBoard").classList.contains("hidden"))return Promise.resolve();
+  closeAgentPersonalBoard("PARTIAL · 正在读取；来源尚未全部接入。");
+  agentPersonalSelected=id;agentPersonalRepository=agentPersonalProject().repository_full_name;
+  $("agentPersonalTitle").textContent=AGENT_SEAT_NAMES[id]+" · 个人看板";
+  $("agentPersonalBoard").classList.remove("hidden");
+  try{$("agentPersonalBoard").scrollIntoView({behavior:"smooth",block:"start"});}catch(_e){}
+  agentOpsEnsureTimers();
+  return loadAgentPersonalBoard();
+}
+async function loadAgentPersonalBoard(){
+  if(!agentPersonalPanelReadable()||agentPersonalLoading||Date.now()<agentPersonalNextAttempt)return;
+  const generation=agentPersonalGeneration,agent=agentPersonalSelected,project=selectedProjectKey,repository=agentPersonalRepository;
+  const current=()=>generation===agentPersonalGeneration&&agent===agentPersonalSelected&&project===selectedProjectKey
+    &&repository===agentPersonalProject()?.repository_full_name;
+  agentPersonalLoading=true;agentPersonalPendingRead=false;
+  const button=$("agentPersonalRefresh");if(button)button.disabled=true;
+  try{
+    const value=await api("agent_board","GET",null,{project,agent},true,current);
+    if(!current()||!token)return;
+    const board=validateAgentPersonalBoard(value,agent,project,repository);
+    renderAgentPersonalBoard(board);
+    agentPersonalFailures=0;agentPersonalNextAttempt=0;agentPersonalLastSuccessAt=Date.now();
+    agentOpsEnsureTimers();
+  }catch(error){
+    if(!current()||["STALE_SESSION","STALE_PROJECT","STALE_REQUEST"].includes(error.code))return;
+    if(error.code==="PERSONAL_BOARD_INVALID"){
+      clearAgentPersonalColumns();
+      $("agentPersonalState").textContent="UNAVAILABLE · 数据范围、来源或格式未核验；不能确认任务为空。";
+      $("agentPersonalEntryState").textContent=$("agentPersonalState").textContent;
+    }else{
+      agentPersonalFailures++;
+      const delay=Math.min(300000,30000*2**Math.min(agentPersonalFailures,4));
+      agentPersonalNextAttempt=Date.now()+delay;
+      $("agentPersonalState").textContent="ERROR · 接口暂不可用或未接入；"+(agentPersonalLastSuccessAt?"保留同一范围的上次数据（STALE）。":"未取得来源数据，不能确认任务为空。")+" "+delay/1000+"秒后可重试。";
+      $("agentPersonalEntryState").textContent=$("agentPersonalState").textContent;
+    }
+  }finally{
+    if(current()){
+      agentPersonalLoading=false;if(button)button.disabled=false;
+      if(agentPersonalPendingRead&&agentPersonalPanelReadable())loadAgentPersonalBoard().catch(()=>{});
+    }
+  }
+}
+function syncAgentOpsProject(){
+  if(agentOpsProjectKey!==selectedProjectKey){
+    operationsProjectGeneration++;
+    clearAgentStatusOps();
+    agentOpsProjectKey=selectedProjectKey;
+  }
+  $("agentStatusOps")?.classList.toggle("hidden",selectedProjectKey!=="xiaoshutong");
+  const personalProject=agentPersonalProject();
+  if(agentPersonalSelected&&agentPersonalRepository!==personalProject?.repository_full_name)closeAgentPersonalBoard();
+  $("agentPersonalEntry")?.classList.toggle("hidden",!personalProject);
+  agentOpsEnsureTimers();
 }
 /* 看板定时器：可见时持有，隐藏时全部暂停；不改任何权限/网络行为 */
 function agentOpsPanelReadable(){
   const panel=$("console");
-  return !!panel&&!panel.classList.contains("hidden")&&!document.hidden;
+  return selectedProjectKey==="xiaoshutong"&&!!token&&!!panel&&!panel.classList.contains("hidden")&&!document.hidden;
 }
 function agentOpsClearTimers(){
   if(agentOpsHourlyTimer){clearInterval(agentOpsHourlyTimer);agentOpsHourlyTimer=0;}
-  if(agentOpsTrackTimer){clearInterval(agentOpsTrackTimer);agentOpsTrackTimer=0;}
 }
 function agentOpsEnsureTimers(){
   agentOpsClearTimers();
-  if(!agentOpsPanelReadable())return; /* 隐藏暂停 */
+  if(!agentOpsPanelReadable()&&!agentPersonalPanelReadable())return; /* 隐藏暂停 */
   agentOpsHourlyTimer=setInterval(()=>{
-    if(!agentOpsPanelReadable()||!token)return;
     /* 可见时1小时兜底；pending补读优先排空（仍受退避/并发抑制约束） */
-    if(agentOpsPendingRead||Date.now()-agentOpsLastSuccessAt>=AGENT_OPS_FALLBACK_MS)loadAgentStatusOps().catch(()=>{});
+    if(agentOpsPanelReadable()&&(agentOpsPendingRead||Date.now()-agentOpsLastSuccessAt>=AGENT_OPS_FALLBACK_MS))loadAgentStatusOps().catch(()=>{});
+    if(agentPersonalPanelReadable()&&(agentPersonalPendingRead||Date.now()-agentPersonalLastSuccessAt>=AGENT_OPS_FALLBACK_MS))loadAgentPersonalBoard().catch(()=>{});
   },60000);
-  if(agentOpsTrack30s){
-    agentOpsTrackTimer=setInterval(()=>{
-      if(!agentOpsPanelReadable()||!token)return;
-      loadAgentStatusOps().catch(()=>{});
-    },AGENT_OPS_TRACK_MS);
-  }
 }
 function agentOpsOnVisibilityChange(){
   if(document.hidden){
+    if(agentPersonalLoading)agentPersonalPendingRead=true;
     if(agentOpsLoading)agentOpsPendingRead=true; /* 在途请求被隐藏盖住，记一次pending补读 */
     agentOpsClearTimers(); /* 隐藏暂停 */
     return;
   }
   agentOpsEnsureTimers();
+  if(agentPersonalPanelReadable()&&(agentPersonalPendingRead||Date.now()-agentPersonalLastSuccessAt>=AGENT_OPS_FALLBACK_MS))loadAgentPersonalBoard().catch(()=>{});
   if(!token||!agentOpsPanelReadable())return;
   if(agentOpsPendingRead){
     /* 在途请求在隐藏期间发生：已结束→补读一次；仍在途→标志保留，结束后补读 */
     if(!agentOpsLoading)loadAgentStatusOps().catch(()=>{});
     return;
   }
-  /* 每次返回：先登记一次pending读取需求，再尝试执行；仅真正发请求时消费，退避不提前请求 */
-  agentOpsPendingRead=true;
-  loadAgentStatusOps().catch(()=>{});
+  /* 返回可见只补已到期的小时兜底；新鲜数据不因切换标签重复读取。 */
+  if(Date.now()-agentOpsLastSuccessAt>=AGENT_OPS_FALLBACK_MS){
+    loadAgentStatusOps().catch(()=>{});
+  }
 }
 async function loadSecuritySettings(){
   const user=await authApi("/auth/v1/user");
@@ -3418,6 +3604,7 @@ async function loadAudit(){
     const value=await api("audit","GET",null,{project:selectedProjectKey});
     renderAudit(value.events||[]);
   }catch(error){
+    if(error.code==="STALE_SESSION"||error.code==="STALE_PROJECT")return;
     $("auditLog").textContent=error.code==="ACCESS_DENIED"
       ?"当前项目角色没有审计查看权限。"
       :"审计记录暂不可用："+error.message;
@@ -3577,6 +3764,7 @@ async function loadMengzhengConfig(){
 }
 
 async function applyProjectSelection(){
+  syncAgentOpsProject();
   const project=membershipFor();
   if(!project)return;
   sessionStorage.setItem("mz_ops_project",selectedProjectKey);
@@ -3870,7 +4058,7 @@ $("projectSelect").addEventListener("change",()=>{
   const next=$("projectSelect").value;
   if(!opsMemberships.some(p=>p?.project_key===next))return;
   selectedProjectKey=next;
-  applyProjectSelection().catch(error=>{
+  applyProjectSelection().then(()=>loadAgentStatusOps()).catch(error=>{
     $("projectIntegrationNote").textContent="项目切换失败："+error.message;
   });
 });
@@ -3931,27 +4119,19 @@ $("backupTotpCopyBtn").addEventListener("click",async()=>{
 });
 $("logoutBtn").addEventListener("click",logout);
 $("opsLogoutBtn").addEventListener("click",logout);$("agentStatusOpsRefresh")?.addEventListener("click",()=>{loadAgentStatusOps().catch(()=>{});});
-/* 可选临时跟踪30秒：默认关，打开后仅在可见时生效 */
-$("agentStatusOpsTrack30s")?.addEventListener("change",(event)=>{
-  agentOpsTrack30s=!!event.target.checked;
-  agentOpsEnsureTimers();
-});
-/* 个人看板（准备中）：六席可点击 + 五栏契约；真实数据未接入，不填假数据、不标完成 */
-const AGENT_SEAT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
-function openAgentPersonalBoard(id){
-  const panel=$("agentPersonalBoard");if(!panel)return;
-  const title=$("agentPersonalTitle");
-  if(title)title.textContent=(AGENT_SEAT_NAMES[id]||"未知席位")+" · 个人看板";
-  panel.classList.remove("hidden");
-  try{panel.scrollIntoView({behavior:"smooth",block:"start"});}catch(_e){}
-}
+/* 两个入口均只读取当前获权项目的个人板。 */
 $("agentStatusOpsList")?.addEventListener("click",(event)=>{
   const target=event.target;
   const btn=target&&target.closest?target.closest("[data-agent]"):null;
   if(!btn||!btn.dataset||!btn.dataset.agent)return;
   openAgentPersonalBoard(btn.dataset.agent);
 });
-$("agentPersonalClose")?.addEventListener("click",()=>{closeAgentPersonalBoard();});
+$("agentPersonalEntry")?.addEventListener("click",event=>{
+  const button=event.target?.closest?.("[data-agent]");
+  if(button?.dataset?.agent)openAgentPersonalBoard(button.dataset.agent).catch(()=>{});
+});
+$("agentPersonalRefresh")?.addEventListener("click",()=>{loadAgentPersonalBoard().catch(()=>{});});
+$("agentPersonalClose")?.addEventListener("click",()=>{closeAgentPersonalBoard();agentOpsEnsureTimers();});
 
 async function initializeOperationsSession(){
   if(consumePasswordSetupCallback()){
@@ -3986,7 +4166,7 @@ $("stewardExitBtn").addEventListener("click",()=>{
     ||opsMemberships.find(item=>item?.project_key!=="dev-steward");
   if(!preferred)return;
   selectedProjectKey=String(preferred.project_key||"");
-  applyProjectSelection().catch(error=>{
+  applyProjectSelection().then(()=>loadAgentStatusOps()).catch(error=>{
     alert("返回项目运维失败："+error.message);
   });
 });
@@ -4017,5 +4197,5 @@ document.querySelectorAll("[data-steward-scroll]").forEach(button=>{
 
 // Refresh only the read-only team panel; never refresh device/config mutations.
 // 打开读取：进入运维台时读一次（见 enterOperationsHub）；手动读取：刷新按钮；
-// 可见时1小时兜底 + 可选临时跟踪30秒（默认关）：见 agentOpsEnsureTimers；隐藏暂停：见 agentOpsOnVisibilityChange。
+// 可见时1小时兜底：见 agentOpsEnsureTimers；隐藏暂停，仅到期或在途受阻时补读：见 agentOpsOnVisibilityChange。
 document.addEventListener("visibilitychange",agentOpsOnVisibilityChange);

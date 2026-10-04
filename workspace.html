@@ -172,22 +172,28 @@
       </div>
     </section>
 
-<section id="agentStatusOps" class="card">
-<div class="section-title"><div><h2>小书童 · 六人团队看板</h2><p class="muted">只读 · 手动刷新 · 可见时每小时兜底同步 · 隐藏页面暂停</p></div><div class="agent-ops-actions"><label class="track-toggle"><input type="checkbox" id="agentStatusOpsTrack30s"> 临时跟踪（30秒，可选）</label><button id="agentStatusOpsRefresh" class="secondary" type="button">刷新</button></div></div>
+<section id="agentStatusOps" class="card hidden">
+<div class="section-title"><div><h2>小书童 · 六人团队看板</h2><p class="muted">只读 · 手动刷新 · 可见时每小时兜底同步 · 隐藏页面暂停</p></div><div class="agent-ops-actions"><button id="agentStatusOpsRefresh" class="secondary" type="button">刷新</button></div></div>
 <p id="agentStatusOpsMeta" class="field-note">等待来源数据</p>
 <div id="agentStatusOpsState" class="status" role="status" aria-live="polite">等待首次刷新</div>
 <div id="agentStatusOpsList"></div>
 <p class="field-note"><a href="https://github.com/xiaoshutong-ai/xiaoshutong-governance/issues?q=is%3Aissue+is%3Aopen+%22团队状态板%22" target="_blank" rel="noopener noreferrer">核对治理仓状态板来源</a> · 状态同步可能滞后，完成情况请核对产物证据。</p>
 </section>
 
-<section id="agentPersonalBoard" class="card hidden" aria-label="个人看板（准备中）">
-<div class="section-title"><div><h2 id="agentPersonalTitle">个人看板</h2><p class="muted">准备中 · 数据未接入，此处不展示任何任务内容</p></div><button id="agentPersonalClose" class="ghost" type="button">关闭</button></div>
+<section id="agentPersonalEntry" class="card hidden" aria-label="六席个人看板入口">
+<h2>六席个人看板 · 当前项目</h2>
+<p id="agentPersonalEntryState" class="muted">PARTIAL · 来源未全部接入；点击席位读取，不代表个人全量任务。</p>
+<div class="agent-personal-seats"><button type="button" data-agent="bi">笔</button><button type="button" data-agent="mo">墨</button><button type="button" data-agent="zhi">纸</button><button type="button" data-agent="yan">砚</button><button type="button" data-agent="juan">卷</button><button type="button" data-agent="xia">匣</button></div>
+</section>
+<section id="agentPersonalBoard" class="card hidden" aria-label="当前项目个人看板">
+<div class="section-title"><div><h2 id="agentPersonalTitle">个人看板</h2><p id="agentPersonalMeta" class="muted">仅当前项目；不代表个人全部任务。</p></div><div class="row"><button id="agentPersonalRefresh" class="secondary" type="button">刷新</button><button id="agentPersonalClose" class="ghost" type="button">关闭</button></div></div>
+<p id="agentPersonalState" class="status" role="status" aria-live="polite">PARTIAL · 来源未全部接入。</p>
 <div class="agent-personal-cols">
-<div class="agent-personal-col"><h3>当前</h3><p class="muted">数据未接入</p></div>
-<div class="agent-personal-col"><h3>已批准待办</h3><p class="muted">数据未接入</p></div>
-<div class="agent-personal-col"><h3>待决</h3><p class="muted">数据未接入</p></div>
-<div class="agent-personal-col"><h3>近期完成</h3><p class="muted">数据未接入</p></div>
-<div class="agent-personal-col"><h3>归档</h3><p class="muted">数据未接入</p></div>
+<div class="agent-personal-col"><h3>当前</h3><div id="agentPersonal_current"></div></div>
+<div class="agent-personal-col"><h3>已批准待办</h3><div id="agentPersonal_approved_backlog"></div></div>
+<div class="agent-personal-col"><h3>待决</h3><div id="agentPersonal_pending_decision"></div></div>
+<div class="agent-personal-col"><h3>近期完成（来源记录）</h3><div id="agentPersonal_recent_completed"></div></div>
+<div class="agent-personal-col"><h3>归档</h3><div id="agentPersonal_archived"></div></div>
 </div>
 </section>
 
@@ -762,4 +768,3 @@
 <script src="./app.js" defer></script>
 </body>
 </html>
-

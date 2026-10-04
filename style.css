@@ -1626,10 +1626,8 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 /* Keep the five-column team board scrollable inside narrow viewports. */
 .agent-table-wrap{max-width:100%;overflow-x:auto}
 
-/* 六席看板刷新控制（commit1）：手动刷新 + 可见时1小时兜底 + 可选30秒跟踪（默认关） */
+/* 六席看板刷新控制：手动刷新 + 可见时1小时兜底 */
 .agent-ops-actions{display:flex;align-items:center;gap:14px;flex-shrink:0}
-.track-toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#6b5d52;cursor:pointer;white-space:nowrap}
-.track-toggle input{accent-color:#7a5c3e}
 
 /* 个人看板（准备中）：六席可点击 + 五栏契约；数据未接入，只放诚实空态 */
 .agent-seat{background:none;border:0;padding:0;font:inherit;font-weight:700;color:#7a5c3e;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
@@ -1637,4 +1635,8 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 .agent-personal-cols{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
 .agent-personal-col{background:#faf6f0;border:1px solid #e8ddd0;border-radius:10px;padding:12px}
 .agent-personal-col h3{margin:0 0 8px;font-size:14px;color:#5c4637}
+.agent-personal-seats{display:flex;flex-wrap:wrap;gap:8px}
+.agent-personal-task{padding:10px 0;border-top:1px solid #e8ddd0;overflow-wrap:anywhere}
+.agent-personal-task h4{margin:0 0 8px;font-size:14px}
+.agent-personal-task p{margin:6px 0;font-size:12px}
 @media(max-width:900px){.agent-personal-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}

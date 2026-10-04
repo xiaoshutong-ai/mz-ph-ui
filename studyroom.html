@@ -26,6 +26,13 @@
 .sr-btn.primary{background:#b03a2e;color:#fff;border-color:#b03a2e;}
 .sr-section{display:none;}
 .sr-section.active{display:block;}
+.sr-chat-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0;}
+.sr-chat-toolbar select{min-width:260px;padding:8px 10px;border:1px solid #cbbda6;border-radius:7px;background:#fff;color:#2a2118;}
+.sr-chat-wrap{overflow-x:auto;}
+.sr-table textarea,.sr-table input,.sr-table select{box-sizing:border-box;width:100%;border:1px solid #d8cbb6;border-radius:6px;background:#fff;color:#2a2118;padding:6px 8px;font:inherit;}
+.sr-table textarea{min-width:260px;min-height:86px;resize:vertical;}
+.sr-table .sr-small-input{min-width:150px;}
+.sr-chat-note{padding:10px 12px;background:#f8f3e8;border:1px solid #eadfc9;border-radius:8px;color:#6b5c48;font-size:13px;}
 #srLoginGate{text-align:center;padding:80px 20px;}
 </style>
 </head>
@@ -48,6 +55,7 @@
 <button class="steward-side-nav-btn active" type="button" data-sr="srOverview">总览</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srDevices">设备管理</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srCodes">预设录取码</button>
+<button class="steward-side-nav-btn" type="button" data-sr="srChat">六席对话</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srAgents">六席状态</button>
 </nav>
 <div class="steward-side-motto">
@@ -101,6 +109,28 @@
 </tr></thead><tbody id="srCodeList"><tr><td colspan="5" class="muted">加载中…</td></tr></tbody></table>
 </div>
 
+<!-- 六席对话 -->
+<!-- security-contract runtime values: value="API" value="MUSE" -->
+<div id="srChat" class="sr-section">
+<div class="sr-chat-note">
+普通设备技术上强制走服务端大模型 API。只有先把一台设备标记为“Owner 信任 Muse 设备”，笔/墨/纸/砚/卷才会出现 Muse 选项；匣始终固定 API。Muse 会连接你的开发 Muse，因此此信任只应给你本人控制的设备。模型密钥继续由 Provider Hub / Vault 管理，本页不接触密钥。
+</div>
+<div class="sr-chat-toolbar">
+<label for="srChatDevice"><strong>设备</strong></label>
+<select id="srChatDevice" onchange="loadStudyroomChatConfig()"><option value="">先加载设备…</option></select>
+<button class="sr-btn" type="button" onclick="loadStudyroomChatConfig()">刷新配置</button>
+<label><input id="srMuseTrusted" type="checkbox" style="width:auto"> Owner 信任 Muse 设备</label>
+<button class="sr-btn" type="button" onclick="saveStudyroomMuseTrust()">保存信任</button>
+<span id="srChatProviderState" class="muted"></span>
+</div>
+<div id="srChatStatus" class="muted" style="margin:8px 0"></div>
+<div class="sr-chat-wrap">
+<table class="sr-table"><thead><tr>
+<th>席位</th><th>运行模式</th><th>API Provider</th><th>模型覆盖</th><th>Memory</th><th>SOUL 覆盖</th><th>操作</th>
+</tr></thead><tbody id="srChatConfigList"><tr><td colspan="7" class="muted">请选择设备</td></tr></tbody></table>
+</div>
+</div>
+
 <!-- 六席状态 -->
 <div id="srAgents" class="sr-section">
 <p class="muted">数据来自治理仓状态板同步</p>
@@ -146,7 +176,21 @@ async function api(path, method, body){
   if(!r.ok) throw new Error("HTTP "+r.status);
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
-function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+async function opsApi(action, method, body, extra){
+  const token = await getToken(); if(!token) throw new Error("未登录");
+  const q = new URLSearchParams({action: action, project: "xiaoshutong"});
+  Object.entries(extra||{}).forEach(([k,v]) => { if(v!=null && v!=="") q.set(k, String(v)); });
+  const r = await fetch(SB_URL + "/functions/v1/p2-ai-provider-admin?" + q.toString(), {
+    method: method||"GET",
+    headers: {"apikey": SB_ANON, "Authorization": "Bearer "+token, "Content-Type": "application/json"},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const t = await r.text();
+  let j = null; try{ j = t ? JSON.parse(t) : null; }catch(e){}
+  if(!r.ok || !j?.ok) throw new Error(j?.error || ("HTTP "+r.status));
+  return j;
+}
+function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
 // 侧边导航
 document.querySelectorAll("[data-sr]").forEach(b => b.addEventListener("click", () => {
@@ -154,6 +198,7 @@ document.querySelectorAll("[data-sr]").forEach(b => b.addEventListener("click", 
   b.classList.add("active");
   document.querySelectorAll(".sr-section").forEach(s => s.classList.remove("active"));
   document.getElementById(b.dataset.sr).classList.add("active");
+  if(b.dataset.sr==="srChat") loadStudyroomChatConfig();
 }));
 
 // 总览
@@ -183,6 +228,21 @@ async function loadOverview(){
 }
 
 // 设备管理
+let _srDevices = [];
+function syncChatDeviceOptions(){
+  const sel = document.getElementById("srChatDevice");
+  if(!sel) return;
+  const keep = sel.value;
+  sel.innerHTML = '<option value="">请选择设备</option>' + _srDevices.map(d => {
+    const label = (d.nickname||d.device_name||"未命名") + (d.enabled ? "" : "（已停用）");
+    return '<option value="'+esc(d.device_id)+'">'+esc(label)+'</option>';
+  }).join("");
+  if(keep && _srDevices.some(d => d.device_id===keep)) sel.value = keep;
+  else {
+    const first = _srDevices.find(d => d.enabled && d.status==="active") || _srDevices[0];
+    if(first) sel.value = first.device_id;
+  }
+}
 function devBadge(s, enabled){
   if(!enabled) return '<span class="sr-badge bad">停用</span>';
   return s === "active" ? '<span class="sr-badge ok">正常</span>' : '<span class="sr-badge warn">待邀请码</span>';
@@ -190,6 +250,8 @@ function devBadge(s, enabled){
 async function loadDevices(){
   try{
     const rows = await api("/rest/v1/devices?select=*&order=last_seen.desc");
+    _srDevices = Array.isArray(rows) ? rows : [];
+    syncChatDeviceOptions();
     const tb = document.getElementById("srDevList");
     if(!rows.length){ tb.innerHTML = '<tr><td colspan="6" class="muted">暂无设备</td></tr>'; return; }
     tb.innerHTML = rows.map(r =>
@@ -273,6 +335,134 @@ async function delPresetCode(id){
   if(!confirm("删除该预设码？")) return;
   try{ await api("/rest/v1/preset_codes?id=eq."+id, "DELETE"); loadPresetCodes(); }
   catch(e){ alert("失败: "+e.message); }
+}
+
+// 六席对话配置
+function srSelected(v, wanted){ return String(v||"")===wanted ? " selected" : ""; }
+async function loadStudyroomChatConfig(){
+  const sel = document.getElementById("srChatDevice");
+  const deviceId = sel ? sel.value : "";
+  const tb = document.getElementById("srChatConfigList");
+  const status = document.getElementById("srChatStatus");
+  if(!deviceId){
+    tb.innerHTML = '<tr><td colspan="7" class="muted">请选择设备</td></tr>';
+    status.textContent = "";
+    return;
+  }
+  status.textContent = "正在读取…";
+  try{
+    const data = await opsApi("studyroom_config","GET",null,{device_id:deviceId});
+    const cfg = data.config || {};
+    const states = cfg.provider_key_states || {};
+    document.getElementById("srMuseTrusted").checked = cfg.device?.muse_trusted === true;
+    document.getElementById("srChatProviderState").textContent =
+      "Provider Key：GLM "+(states.zhipuai?"已配置":"未配置")+" · DeepSeek "+(states.deepseek?"已配置":"未配置");
+    const chars = Array.isArray(cfg.characters) ? cfg.characters : [];
+    tb.innerHTML = chars.map(c => {
+      const cid = String(c.character_id||"");
+      if(!["bi","mo","zhi","yan","juan","xia"].includes(cid)) return "";
+      const muse = c.muse_allowed === true;
+      const mode = String(c.runtime_mode||"API");
+      const provider = String(c.api_provider_override||c.api_provider||"inherit");
+      const model = String(c.api_model_override||"");
+      const soul = String(c.soul_override||"");
+      const defaultSoul = String(c.default_soul||c.soul||"");
+      return "<tr>"
+        +"<td><strong>"+esc(c.display_name||cid)+"</strong><br><span class='muted'>"+esc(cid)+"</span>"
+        +(c.has_override?"<br><span class='sr-badge warn'>设备覆盖</span>":"<br><span class='sr-badge ok'>默认</span>")+"</td>"
+        +"<td><select id='srMode-"+cid+"' "+(muse?"":"disabled")+">"
+          +"<option value='API'"+srSelected(mode,"API")+">API</option>"
+          +(muse?"<option value='MUSE'"+srSelected(mode,"MUSE")+">Muse</option>":"")
+          +"</select>"+(muse?"":"<div class='muted' style='font-size:11px'>"+(cid==="xia"?"匣固定 API":"需先启用 Owner Muse 信任")+"</div>")+"</td>"
+        +"<td><select id='srProvider-"+cid+"'>"
+          +"<option value='inherit'"+srSelected(provider,"inherit")+">跟随 Provider Hub</option>"
+          +"<option value='zhipuai'"+srSelected(provider,"zhipuai")+">GLM / ZhipuAI</option>"
+          +"<option value='deepseek'"+srSelected(provider,"deepseek")+">DeepSeek</option>"
+          +"</select></td>"
+        +"<td><input class='sr-small-input' id='srModel-"+cid+"' maxlength='128' value='"+esc(model)+"' placeholder='留空=Provider 默认模型'></td>"
+        +"<td style='text-align:center'><input id='srMemory-"+cid+"' type='checkbox' style='width:auto' "+(c.memory_enabled!==false?"checked":"")+"><div class='muted' style='font-size:11px'>保存连续对话</div></td>"
+        +"<td><textarea id='srSoul-"+cid+"' maxlength='6000' placeholder='留空=默认 SOUL'>"+esc(soul)+"</textarea>"
+          +"<div class='muted' style='font-size:11px' title='"+esc(defaultSoul)+"'>默认："+esc(defaultSoul.slice(0,44))+(defaultSoul.length>44?"…":"")+"</div></td>"
+        +"<td><button class='sr-btn primary' onclick=\"saveStudyroomCharacter('"+cid+"')\">保存</button>"
+          +"<button class='sr-btn' onclick=\"resetStudyroomCharacter('"+cid+"')\">恢复默认</button></td>"
+        +"</tr>";
+    }).join("") || '<tr><td colspan="7" class="muted">暂无配置</td></tr>';
+    status.textContent = "当前设备："+String(cfg.device?.nickname||cfg.device?.device_name||deviceId);
+  }catch(e){
+    tb.innerHTML = '<tr><td colspan="7" class="muted">读取失败</td></tr>';
+    status.textContent = "读取失败："+e.message;
+  }
+}
+async function saveStudyroomMuseTrust(){
+  const deviceId = document.getElementById("srChatDevice").value;
+  if(!deviceId) return;
+  const box = document.getElementById("srMuseTrusted");
+  const enabled = box.checked;
+  const message = enabled
+    ? "启用后，这台设备的笔/墨/纸/砚/卷可直接连接你的开发 Muse。仅应给你本人控制的设备开启。确定继续？"
+    : "关闭后，该设备所有 Muse 席位会立即退回 API 模式。确定继续？";
+  if(!confirm(message)){
+    await loadStudyroomChatConfig();
+    return;
+  }
+  const status = document.getElementById("srChatStatus");
+  status.textContent = enabled ? "正在启用 Owner Muse 信任…" : "正在关闭 Muse 信任…";
+  try{
+    await opsApi("studyroom_muse_device_save","POST",{
+      device_id:deviceId,
+      enabled:enabled,
+      note:enabled ? "Owner-approved StudyRoom Muse device" : "Muse disabled"
+    });
+    status.textContent = enabled ? "已启用 Owner Muse 信任" : "已关闭 Muse 信任，Muse 覆盖已退回 API";
+    await loadStudyroomChatConfig();
+  }catch(e){
+    status.textContent = "信任设置失败："+e.message;
+    await loadStudyroomChatConfig();
+  }
+}
+
+async function saveStudyroomCharacter(cid){
+  const deviceId = document.getElementById("srChatDevice").value;
+  if(!deviceId) return;
+  const mode = document.getElementById("srMode-"+cid).value;
+  const provider = document.getElementById("srProvider-"+cid).value;
+  const model = document.getElementById("srModel-"+cid).value.trim();
+  const soul = document.getElementById("srSoul-"+cid).value.trim();
+  const memory = document.getElementById("srMemory-"+cid).checked;
+  const status = document.getElementById("srChatStatus");
+  status.textContent = "正在保存 "+cid+"…";
+  try{
+    await opsApi("studyroom_config_save","POST",{
+      device_id:deviceId,
+      character_id:cid,
+      runtime_mode:mode,
+      api_provider:provider,
+      api_model:model,
+      soul_override:soul,
+      memory_enabled:memory,
+      reset:false
+    });
+    status.textContent = "已保存";
+    await loadStudyroomChatConfig();
+  }catch(e){
+    status.textContent = "保存失败："+e.message;
+  }
+}
+async function resetStudyroomCharacter(cid){
+  const deviceId = document.getElementById("srChatDevice").value;
+  if(!deviceId || !confirm("恢复该席位在此设备上的默认设置？")) return;
+  const status = document.getElementById("srChatStatus");
+  try{
+    await opsApi("studyroom_config_save","POST",{
+      device_id:deviceId,
+      character_id:cid,
+      reset:true
+    });
+    status.textContent = "已恢复默认";
+    await loadStudyroomChatConfig();
+  }catch(e){
+    status.textContent = "恢复失败："+e.message;
+  }
 }
 
 // 六席状态
