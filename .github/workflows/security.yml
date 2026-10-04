@@ -45,6 +45,57 @@ jobs:
           account_js = Path("account.js").read_text(encoding="utf-8")
           app = Path("app.js").read_text(encoding="utf-8")
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
+          board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
+
+          # Water-Ink Academy board is Chinese-first at the presentation layer.
+          board_start = studyroom.find('<div id="srAgents"')
+          board_end = studyroom.find('<script src="./board-consumer.js"', board_start)
+          if board_start < 0 or board_end <= board_start:
+              raise SystemExit("StudyRoom board presentation boundary missing")
+          board_surface = studyroom[board_start:board_end]
+          if 'style="' in board_surface:
+              raise SystemExit("StudyRoom board must use shared CSS classes, not inline style attributes")
+
+          board_required_copy = (
+              "院务态势 · 实时",
+              "六席实时看板",
+              "先看全院，再看个人",
+              "全院态势",
+              "当前主任务",
+              "个人态势",
+              "查看个人看板",
+              "查看完整信息",
+              "任务编号",
+              "范围与验收",
+              "负责人 / 实施 / 复核",
+              "当前阶段",
+              "验证证据",
+              "下一步",
+              "阻塞原因",
+          )
+          board_source = board_surface + "\n" + board_consumer
+          for marker in board_required_copy:
+              if marker not in board_source:
+                  raise SystemExit("Chinese-first board copy missing: " + marker)
+
+          board_forbidden_visible_copy = (
+              "UNAVAILABLE ·",
+              "PARTIAL ·",
+              "STALE ·",
+              "个人页 →",
+              '"task_id"',
+              '"Goal"',
+              '"owner / writer / reviewer"',
+              '"stage / activity"',
+              '"next action"',
+              '"dependencies"',
+          )
+          for marker in board_forbidden_visible_copy:
+              if marker in board_source:
+                  raise SystemExit("mixed-language board UI regressed: " + marker)
+
+          if "renderAgentStatusOps = function" in board_consumer or "agentPersonalEntryState" in board_consumer:
+              raise SystemExit("StudyRoom board renderer must remain presentation-only and not rebind workspace UI")
 
 
           # Whole-repository public-boundary audit. This intentionally scans tracked
