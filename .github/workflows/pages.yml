@@ -48,13 +48,15 @@ jobs:
           if [ -f board-consumer.js ]; then
             cp -- board-consumer.js _site/
           fi
-          if [ -d assets/characters ]; then
-            mkdir -p _site/assets/characters
-            for name in bi mo zhi yan juan xia; do
-              test -f "assets/characters/$name.png"
-              cp -- "assets/characters/$name.png" _site/assets/characters/
-            done
-          fi
+          mkdir -p _site/assets/characters
+          cp -- \
+            assets/characters/bi.png \
+            assets/characters/mo.png \
+            assets/characters/zhi.png \
+            assets/characters/yan.png \
+            assets/characters/juan.png \
+            assets/characters/xia.png \
+            _site/assets/characters/
           if [ -d updates ]; then
             cp -R -- updates _site/
           fi
@@ -95,6 +97,14 @@ jobs:
                   raise SystemExit("unexpected Pages subtree: " + rel)
               if path.stat().st_size > 1_000_000:
                   raise SystemExit("Pages file exceeds 1 MB: " + rel)
+          missing_character_assets = allowed_character_assets - {
+              path.relative_to(root).as_posix() for path in files
+          }
+          if missing_character_assets:
+              raise SystemExit(
+                  "missing StudyRoom character assets: "
+                  + ", ".join(sorted(missing_character_assets))
+              )
           print("PAGES_ALLOWLIST=PASS")
           for path in sorted(files):
               print(path.relative_to(root).as_posix())

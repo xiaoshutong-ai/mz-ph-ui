@@ -46,6 +46,87 @@ jobs:
           account_js = Path("account.js").read_text(encoding="utf-8")
           app = Path("app.js").read_text(encoding="utf-8")
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
+          board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
+          style = Path("style.css").read_text(encoding="utf-8")
+
+          # The v3 board visual system is token-driven: raw colors live only in the
+          # #srAgents token declaration, never scattered through component rules.
+          v3_marker = "/* ===== 水墨书院实时看板 v3 · 中文视觉系统 ===== */"
+          v3_start = style.find(v3_marker)
+          token_start = style.find("#srAgents{", v3_start)
+          token_end = style.find("\n}", token_start)
+          if v3_start < 0 or token_start < 0 or token_end <= token_start:
+              raise SystemExit("StudyRoom v3 visual token boundary missing")
+          v3_token_block = style[token_start:token_end]
+          for token in (
+              "--sr-text:", "--sr-surface:", "--sr-border:", "--sr-jade:",
+              "--sr-danger:", "--sr-wait:", "--sr-decision:", "--sr-done:",
+              "--sr-seat-bi:", "--sr-seat-mo:", "--sr-seat-zhi:",
+              "--sr-seat-yan:", "--sr-seat-juan:", "--sr-seat-xia:",
+              "--sr-shadow:", "--sr-focus:",
+          ):
+              if token not in v3_token_block:
+                  raise SystemExit("StudyRoom semantic visual token missing: " + token)
+          v3_component_rules = style[token_end + 2:]
+          raw_component_colors = re.findall(
+              r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)",
+              v3_component_rules,
+          )
+          if raw_component_colors:
+              raise SystemExit(
+                  "StudyRoom component rules must consume semantic tokens; raw colors found: "
+                  + ", ".join(sorted(set(raw_component_colors)))
+              )
+
+          # Water-Ink Academy board is Chinese-first at the presentation layer.
+          board_start = studyroom.find('<div id="srAgents"')
+          board_end = studyroom.find('<script src="./board-consumer.js"', board_start)
+          if board_start < 0 or board_end <= board_start:
+              raise SystemExit("StudyRoom board presentation boundary missing")
+          board_surface = studyroom[board_start:board_end]
+          if 'style="' in board_surface:
+              raise SystemExit("StudyRoom board must use shared CSS classes, not inline style attributes")
+
+          board_required_copy = (
+              "院务态势 · 实时",
+              "六席实时看板",
+              "先看全院，再看个人",
+              "全院态势",
+              "当前主任务",
+              "个人态势",
+              "查看个人看板",
+              "查看完整信息",
+              "任务编号",
+              "范围与验收",
+              "负责人 / 实施 / 复核",
+              "当前阶段",
+              "验证证据",
+              "下一步",
+              "阻塞原因",
+          )
+          board_source = board_surface + "\n" + board_consumer
+          for marker in board_required_copy:
+              if marker not in board_source:
+                  raise SystemExit("Chinese-first board copy missing: " + marker)
+
+          board_forbidden_visible_copy = (
+              "UNAVAILABLE ·",
+              "PARTIAL ·",
+              "STALE ·",
+              "个人页 →",
+              '"task_id"',
+              '"Goal"',
+              '"owner / writer / reviewer"',
+              '"stage / activity"',
+              '"next action"',
+              '"dependencies"',
+          )
+          for marker in board_forbidden_visible_copy:
+              if marker in board_source:
+                  raise SystemExit("mixed-language board UI regressed: " + marker)
+
+          if "renderAgentStatusOps = function" in board_consumer or "agentPersonalEntryState" in board_consumer:
+              raise SystemExit("StudyRoom board renderer must remain presentation-only and not rebind workspace UI")
 
 
           # Whole-repository public-boundary audit. This intentionally scans tracked
@@ -762,6 +843,7 @@ jobs:
           node --check entry.js
           node --check account.js
           node --check app.js
+          node --check board-consumer.js
           python3 - <<'PY'
           from pathlib import Path
           import re
@@ -772,6 +854,47 @@ jobs:
           Path("/tmp/studyroom-inline.js").write_text(match.group(1), encoding="utf-8")
           PY
           node --check /tmp/studyroom-inline.js
+          node <<'NODE'
+          const assert=require('node:assert/strict');
+          const Board=require('./board-consumer.js');
+          const now=Date.now();
+          const detail=JSON.stringify({
+            schema:'xia-team-board/v1',
+            inventory_state:'partial',
+            tasks:[
+              {id:'demo-main',sec:'doing',main:true,title:'中文版视觉重构',status:'in_progress',scope:'中文优先、状态可视化',owr:'匣 / 匣 / 笔',stage:'final_review',evidence:'正式 Gate PASS',priority:'high',next:'完成独立复核',checked:new Date(now).toISOString()},
+              {id:'demo-blocked',sec:'blocked',title:'等待产品决定',status:'blocked',blocker:'等待确认',checked:new Date(now).toISOString()}
+            ],
+            checked_at:new Date(now).toISOString(),
+            source:'governance#9'
+          });
+          const rows=[
+            {id:'bi',status:'in_progress',task_name:'demo',task_detail:detail,updated_at:new Date(now).toISOString()},
+            {id:'mo',status:'idle',task_name:'none',task_detail:JSON.stringify({schema:'xia-team-board/v1',inventory_state:'confirmed_empty',tasks:[],checked_at:new Date(now).toISOString()}),updated_at:new Date(now).toISOString()}
+          ];
+          const names={bi:'笔',mo:'墨',zhi:'纸',yan:'砚',juan:'卷',xia:'匣'};
+          const html=Board.renderOverview(rows,names,'水墨书院 · 当前六席上报',now)
+            + Board.renderPersonal('bi','笔',rows[0],now);
+          for(const marker of ['全院态势','当前主任务','个人态势','查看个人看板','查看完整信息','任务编号','范围与验收','负责人 / 实施 / 复核','当前阶段','验证证据','下一步','阻塞原因','进行中','受阻']){
+            assert.ok(html.includes(marker),'Chinese render marker missing: '+marker);
+          }
+          for(const marker of ['UNAVAILABLE ·','PARTIAL ·','STALE ·','task_id','owner / writer / reviewer','stage / activity','next action','dependencies','>in_progress<','>final_review<','>high<']){
+            assert.ok(!html.includes(marker),'mixed-language render leaked: '+marker);
+          }
+          assert.ok(html.includes('最终复核'),'stage token not localized');
+          assert.ok(html.includes('优先级 · 高'),'priority token not localized');
+          assert.ok(html.includes('aria-label="查看笔的个人看板"'),'seat action accessibility label missing');
+          for(const id of ['bi','mo','zhi','yan','juan','xia']){
+            assert.ok(
+              html.includes('src="./assets/characters/'+id+'.png"'),
+              'official StudyRoom avatar missing from renderer: '+id
+            );
+          }
+          const escaped=Board.renderPersonal('bi','笔',{...rows[0],task_detail:JSON.stringify({schema:'xia-team-board/v1',tasks:[{id:'x',sec:'doing',title:'<img src=x onerror=attack>',status:'in_progress'}]})},now);
+          assert.ok(!escaped.includes('<img src=x'),'task title escaping regressed');
+          assert.ok(escaped.includes('&lt;img'),'escaped task title missing');
+          console.log('BOARD_CHINESE_RENDER=PASS');
+          NODE
       - name: Verify hourly and manual team-board refresh
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # Execute only trusted main source. The fake clock/DOM is not a sandbox.
@@ -1060,6 +1183,33 @@ jobs:
           test('original main f3986 security prefix allows only reviewed public-boundary extensions',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
             const board='board-'+'consumer.js';
+
+            // PR #79 reviewed presentation extensions are pinned as exact Git blobs,
+            // then removed before the immutable f3986 prefix hash is evaluated.
+            const presentationStart='          board_'+'consumer = Path("board-consumer.js").read_text(encoding="utf-8")';
+            const presentationEnd='          # Whole-repository public-'+'boundary audit.';
+            const presentationA=source.indexOf(presentationStart);
+            const presentationB=source.indexOf(presentationEnd,presentationA);
+            assert.ok(presentationA>=0&&presentationB>presentationA,'reviewed v3 presentation boundary missing');
+            const presentationBlock=source.slice(presentationA,presentationB);
+            assert.equal(blobHash(Buffer.from(presentationBlock)),'fb0fed5e32d63d15d088abde6f73f2374e761426','reviewed v3 presentation block drifted');
+            source=source.slice(0,presentationA)+'\n\n'+source.slice(presentationB);
+
+            const consumerSyntax='          node --check board-'+'consumer.js\n';
+            assert.equal(source.split(consumerSyntax).length-1,1,'reviewed board-consumer syntax check must occur exactly once');
+            source=source.replace(consumerSyntax,'');
+
+            const inlineAnchor='          node --check /tmp/studyroom-inline.js\n';
+            const rendererA=source.indexOf(inlineAnchor);
+            assert.ok(rendererA>=0,'StudyRoom inline syntax anchor missing');
+            const rendererStart=rendererA+inlineAnchor.length;
+            const rendererEndMarker='      - name: Verify hourly and manual team-'+'board refresh';
+            const rendererEnd=source.indexOf(rendererEndMarker,rendererStart);
+            assert.ok(rendererEnd>rendererStart,'reviewed Chinese renderer Gate boundary missing');
+            const rendererBlock=source.slice(rendererStart,rendererEnd);
+            assert.equal(blobHash(Buffer.from(rendererBlock)),'6bfbfcf7d1629e76a6e5133f34862d74d9d780b5','reviewed Chinese renderer Gate drifted');
+            source=source.slice(0,rendererStart)+source.slice(rendererEnd);
+
             const avatarImport=[
               '          from pathlib import Path',
               '          import hashlib',

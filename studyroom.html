@@ -56,7 +56,7 @@
 <button class="steward-side-nav-btn" type="button" data-sr="srDevices">设备管理</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srCodes">预设录取码</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srChat">六席对话</button>
-<button class="steward-side-nav-btn" type="button" data-sr="srAgents">六席状态</button>
+<button class="steward-side-nav-btn" type="button" data-sr="srAgents">实时看板</button>
 </nav>
 <div class="steward-side-motto">
 <strong>笔墨纸砚 · 卷匣同心</strong>
@@ -131,33 +131,37 @@
 </div>
 </div>
 
-<!-- 六席状态 -->
-<div id="srAgents" class="sr-section">
-<div class="section-title">
-  <div>
-    <h2>六席实时看板</h2>
-    <p class="muted">治理仓状态板 → 结构化同步 → 当前六席上报。总览和个人页共用同一份 xia-team-board/v1 数据。</p>
+<!-- 六席实时看板 -->
+<div id="srAgents" class="sr-section sr-board-section">
+<section class="sr-board-hero" aria-labelledby="srBoardTitle">
+  <div class="sr-board-hero-copy">
+    <span class="sr-board-kicker">院务态势 · 实时</span>
+    <h2 id="srBoardTitle">六席实时看板</h2>
+    <p>先看全院，再看个人。状态、任务与阻塞一屏可读，技术细节按需展开。</p>
   </div>
-  <button id="srAgentRefresh" class="sr-btn" type="button">刷新</button>
-</div>
-<p id="srAgentMeta" class="muted">等待首次读取</p>
-<div id="srAgentState" class="status" role="status" aria-live="polite">等待首次读取</div>
-<div id="srAgentOverview" style="margin-top:14px"></div>
+  <div class="sr-board-actions">
+    <span id="srAgentState" class="sr-board-sync" role="status" aria-live="polite">等待首次读取</span>
+    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">重新读取</button>
+  </div>
+</section>
+<p id="srAgentMeta" class="sr-board-note">当前看板展示成员最新上报，最终交付仍以任务、代码审查与测试证据为准。</p>
+<div id="srAgentOverview" class="sr-board-overview"></div>
 
-<div id="srAgentPersonal" class="card hidden" style="margin-top:16px">
-  <div class="section-title">
+<section id="srAgentPersonal" class="sr-board-personal hidden" aria-labelledby="srAgentPersonalTitle">
+  <div class="sr-board-personal-head">
     <div>
-      <h3 id="srAgentPersonalTitle">个人实时看板</h3>
-      <p id="srAgentPersonalMeta" class="muted">当前成员上报，不代表历史全量任务。</p>
+      <span class="sr-board-kicker">席位详情</span>
+      <h3 id="srAgentPersonalTitle">个人看板</h3>
+      <p id="srAgentPersonalMeta">当前成员上报，不代表历史全量任务。</p>
     </div>
-    <div class="row">
-      <button id="srAgentPersonalRefresh" class="sr-btn" type="button">刷新</button>
-      <button id="srAgentPersonalClose" class="sr-btn" type="button">关闭</button>
+    <div class="sr-board-personal-actions">
+      <button id="srAgentPersonalRefresh" class="sr-btn" type="button">重新读取</button>
+      <button id="srAgentPersonalClose" class="sr-btn" type="button">收起</button>
     </div>
   </div>
-  <div id="srAgentPersonalState" class="status" role="status" aria-live="polite">等待选择席位</div>
-  <div id="srAgentPersonalContent" style="margin-top:12px"></div>
-</div>
+  <div id="srAgentPersonalState" class="sr-board-personal-state" role="status" aria-live="polite">请选择一个席位查看详情</div>
+  <div id="srAgentPersonalContent" class="sr-board-personal-content"></div>
+</section>
 </div>
 
 </div>
@@ -524,23 +528,35 @@ function validateSrAgentRows(value){
 }
 
 function srAgentStateText(row){
-  if(!row) return "UNAVAILABLE · 此席位未取得当前上报，不能确认任务为空。";
+  if(!row) return "暂不可用 · 尚未取得本席当前上报";
   const parsed=BoardConsumer.parseTaskDetail(row.task_detail);
-  if(parsed.kind==="invalid") return "UNAVAILABLE · 上报格式未核验。";
+  if(parsed.kind==="invalid") return "暂不可用 · 本次上报格式异常";
   const stamp=Date.parse(row.updated_at),stale=!Number.isFinite(stamp)||stamp>Date.now()||Date.now()-stamp>=3600000;
-  return "PARTIAL · 当前成员上报，不代表历史全量任务。"+(stale?" STALE · 来源已过期或时间未核验。":"");
+  return stale ? "当前上报 · 数据已过期，请重新读取" : "当前上报 · 数据有效";
 }
 
+function syncSrAgentSelection(){
+  document.querySelectorAll("#srAgentOverview [data-agent]").forEach(button=>{
+    const active=button.dataset.agent===_srAgentSelected;
+    button.classList.toggle("is-selected",active);
+    button.setAttribute("aria-pressed",active?"true":"false");
+    const card=button.closest(".b3-seat-card");
+    if(card) card.classList.toggle("is-selected",active);
+  });
+}
 function renderSrAgentPersonal(id){
   _srAgentSelected=id;
   const row=_srAgentRows.find(item=>item.id===id)||null;
-  document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人实时看板";
+  document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人看板";
   document.getElementById("srAgentPersonalState").textContent=srAgentStateText(row);
-  document.getElementById("srAgentPersonalMeta").textContent="水墨书院 · 来源读取时间："+(_srAgentReadAt?new Date(_srAgentReadAt).toISOString():"未核验");
+  document.getElementById("srAgentPersonalMeta").textContent="本次读取："+(_srAgentReadAt?new Date(_srAgentReadAt).toLocaleString("zh-CN",{hour12:false}):"时间待核验");
   document.getElementById("srAgentPersonalContent").innerHTML=BoardConsumer.renderPersonal(
     id,SR_AGENT_NAMES[id]||id,row,_srAgentReadAt
   );
-  document.getElementById("srAgentPersonal").classList.remove("hidden");
+  const panel=document.getElementById("srAgentPersonal");
+  panel.classList.remove("hidden");
+  syncSrAgentSelection();
+  try{panel.scrollIntoView({block:"start"});}catch(_e){}
 }
 
 async function loadAgents(){
@@ -559,15 +575,16 @@ async function loadAgents(){
       rows,SR_AGENT_NAMES,"水墨书院 · 当前六席上报",_srAgentReadAt
     );
     document.getElementById("srAgentMeta").textContent=
-      "PARTIAL · 当前成员上报，不代表完整任务清单或真实交付；完成情况仍以 Goal/PR/CI 证据为准。";
-    document.getElementById("srAgentState").textContent="已读取 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleString("zh-CN",{hour12:false});
+      "数据口径：仅展示成员当前上报；最终交付仍以任务、代码审查与测试证据为准。";
+    document.getElementById("srAgentState").textContent="已同步 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
     if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
+    else syncSrAgentSelection();
   }catch(e){
     _srAgentRows=[];
     _srAgentReadAt=0;
     document.getElementById("srAgentOverview").innerHTML="";
-    document.getElementById("srAgentMeta").textContent="UNAVAILABLE · 当前六席状态读取失败。";
-    document.getElementById("srAgentState").textContent="读取失败："+e.message;
+    document.getElementById("srAgentMeta").textContent="当前无法读取六席状态，请稍后重试。";
+    document.getElementById("srAgentState").textContent="读取失败";
     document.getElementById("srAgentPersonal").classList.add("hidden");
   }finally{
     _srAgentsLoading=false;
@@ -585,6 +602,7 @@ document.getElementById("srAgentPersonalRefresh").addEventListener("click",()=>l
 document.getElementById("srAgentPersonalClose").addEventListener("click",()=>{
   _srAgentSelected="";
   document.getElementById("srAgentPersonal").classList.add("hidden");
+  syncSrAgentSelection();
 });
 function ensureSrAgentTimer(){
   if(_srAgentTimer) return;
