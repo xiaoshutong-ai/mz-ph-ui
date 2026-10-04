@@ -1183,6 +1183,33 @@ jobs:
           test('original main f3986 security prefix allows only reviewed public-boundary extensions',()=>{
             let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
             const board='board-'+'consumer.js';
+
+            // PR #79 reviewed presentation extensions are pinned as exact Git blobs,
+            // then removed before the immutable f3986 prefix hash is evaluated.
+            const presentationStart='          board_'+'consumer = Path("board-consumer.js").read_text(encoding="utf-8")';
+            const presentationEnd='          # Whole-repository public-'+'boundary audit.';
+            const presentationA=source.indexOf(presentationStart);
+            const presentationB=source.indexOf(presentationEnd,presentationA);
+            assert.ok(presentationA>=0&&presentationB>presentationA,'reviewed v3 presentation boundary missing');
+            const presentationBlock=source.slice(presentationA,presentationB);
+            assert.equal(blobHash(Buffer.from(presentationBlock)),'fb0fed5e32d63d15d088abde6f73f2374e761426','reviewed v3 presentation block drifted');
+            source=source.slice(0,presentationA)+'\n\n'+source.slice(presentationB);
+
+            const consumerSyntax='          node --check board-'+'consumer.js\n';
+            assert.equal(source.split(consumerSyntax).length-1,1,'reviewed board-consumer syntax check must occur exactly once');
+            source=source.replace(consumerSyntax,'');
+
+            const inlineAnchor='          node --check /tmp/studyroom-inline.js\n';
+            const rendererA=source.indexOf(inlineAnchor);
+            assert.ok(rendererA>=0,'StudyRoom inline syntax anchor missing');
+            const rendererStart=rendererA+inlineAnchor.length;
+            const rendererEndMarker='      - name: Verify hourly and manual team-'+'board refresh';
+            const rendererEnd=source.indexOf(rendererEndMarker,rendererStart);
+            assert.ok(rendererEnd>rendererStart,'reviewed Chinese renderer Gate boundary missing');
+            const rendererBlock=source.slice(rendererStart,rendererEnd);
+            assert.equal(blobHash(Buffer.from(rendererBlock)),'6bfbfcf7d1629e76a6e5133f34862d74d9d780b5','reviewed Chinese renderer Gate drifted');
+            source=source.slice(0,rendererStart)+source.slice(rendererEnd);
+
             const avatarImport=[
               '          from pathlib import Path',
               '          import hashlib',
