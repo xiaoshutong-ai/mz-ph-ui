@@ -1975,6 +1975,7 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
   gap:10px;
   min-width:0;
 }
+/* Official mobile-App front portraits; source bytes are SHA-pinned by the public Security Gate. */
 .b3-seat-mark{
   --seat-accent:var(--sr-border-strong);
   position:relative;
