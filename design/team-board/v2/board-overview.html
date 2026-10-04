@@ -62,6 +62,7 @@ h1{font-family:"Noto Serif SC","Songti SC",serif;font-size:32px;margin:6px 0 8px
 .goto{font-size:13px;font-weight:800;color:var(--accent);text-decoration:none}
 .goto:hover{text-decoration:underline}
 .times{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.7}
+.empty-box{border:1.5px dashed #d8c7b2;border-radius:12px;padding:18px;text-align:center;color:var(--muted);font-size:13px;background:#faf6ef}
 .heartbeat-note{margin-top:18px;background:var(--paper);border:1px dashed #d8c7b2;border-radius:14px;padding:14px 18px;font-size:13px;color:var(--body);line-height:1.75}
 .heartbeat-note b{color:var(--ink)}
 footer{margin-top:26px;text-align:center;color:var(--muted);font-size:11.5px;line-height:1.8}
@@ -111,8 +112,13 @@ footer{margin-top:26px;text-align:center;color:var(--muted);font-size:11.5px;lin
 <script>
 const DOT = {doing:'var(--green)', blocked:'var(--red)', wait:'var(--amber)', decide:'var(--violet)', done:'var(--gray)'};
 const SECN = {doing:'进行中', blocked:'阻塞', wait:'等待', decide:'待决定', done:'完成'};
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 function presence(m){
-  const s = new Set(m.tasks.map(t=>t.sec));
+  const tasks = m.tasks || [];
+  if(!tasks.length) return ['未接入','var(--muted)'];
+  const s = new Set(tasks.map(t=>t.sec));
   if(s.has('blocked')) return ['阻塞','var(--red)'];
   if(s.has('doing')) return ['实施中','var(--green)'];
   if(s.has('wait')) return ['等待','var(--amber)'];
@@ -121,33 +127,49 @@ function presence(m){
 }
 const grid = document.getElementById('grid');
 for(const m of BOARD.members){
-  const main = m.tasks.find(t=>t.main) || m.tasks[0];
-  const others = m.tasks.filter(t=>t!==main);
-  const counts = {};
-  for(const t of m.tasks) counts[t.sec]=(counts[t.sec]||0)+1;
-  const [plabel,pcolor] = presence(m);
+  const tasks = m.tasks || [];
   const card = document.createElement('div');
   card.className='card';
+  if(!tasks.length){
+    card.innerHTML = `
+    <div class="card-head">
+      <div class="avatar">${esc(m.name)}</div>
+      <div class="who"><div class="name">${esc(m.name)} <span class="login">· ${esc(m.login)}</span></div><div class="role">${esc(m.role)}</div></div>
+      <div class="presence"><i class="dot" style="background:var(--muted)"></i>未接入</div>
+    </div>
+    <div class="empty-box">空 —— 该成员当前无有效任务（显式空态，非数据缺失）</div>
+    <div class="card-foot">
+      <div class="counts">—</div>
+      <a class="goto" href="board-personal.html#${esc(m.key)}">个人页 →</a>
+    </div>`;
+    grid.appendChild(card);
+    continue;
+  }
+  const main = tasks.find(t=>t.main) || tasks[0];
+  const others = tasks.filter(t=>t!==main);
+  const counts = {};
+  for(const t of tasks) counts[t.sec]=(counts[t.sec]||0)+1;
+  const [plabel,pcolor] = presence(m);
   card.innerHTML = `
     <div class="card-head">
-      <div class="avatar">${m.name}</div>
-      <div class="who"><div class="name">${m.name} <span class="login">· ${m.login}</span></div><div class="role">${m.role}</div></div>
-      <div class="presence"><i class="dot" style="background:${pcolor}"></i>${plabel}</div>
+      <div class="avatar">${esc(m.name)}</div>
+      <div class="who"><div class="name">${esc(m.name)} <span class="login">· ${esc(m.login)}</span></div><div class="role">${esc(m.role)}</div></div>
+      <div class="presence"><i class="dot" style="background:${pcolor}"></i>${esc(plabel)}</div>
     </div>
     <div class="main-task">
       <div class="label">主任务</div>
-      <div class="task-title">${main.title}</div>
-      <div class="task-meta"><span class="pill ${main.scls}">${main.status}</span><span class="pill p-id">${main.id}</span></div>
+      <div class="task-title">${esc(main.title)}</div>
+      <div class="task-meta"><span class="pill ${esc(main.scls)}">${esc(main.status)}</span><span class="pill p-id">${esc(main.id)}</span></div>
     </div>
     <div class="more">
       <div class="label">另 ${others.length} 项有效并行认领</div>
-      <ul>${others.map(t=>`<li><i class="dot" style="background:${DOT[t.sec]}"></i><span class="t">${t.title}</span></li>`).join('')}</ul>
+      <ul>${others.map(t=>`<li><i class="dot" style="background:${DOT[t.sec]||'var(--muted)'}"></i><span class="t">${esc(t.title)}</span></li>`).join('')}</ul>
     </div>
     <div class="card-foot">
-      <div class="counts">${['doing','blocked','wait','decide','done'].filter(k=>counts[k]).map(k=>`${SECN[k]} <b>${counts[k]}</b>`).join(' · ')}</div>
-      <a class="goto" href="board-personal.html#${m.key}">个人页 →</a>
+      <div class="counts">${['doing','blocked','wait','decide','done'].filter(k=>counts[k]).map(k=>`${esc(SECN[k])} <b>${counts[k]}</b>`).join(' · ')}</div>
+      <a class="goto" href="board-personal.html#${esc(m.key)}">个人页 →</a>
     </div>
-    <div class="times">检查 ${main.checked} · 更新 ${main.updated}</div>`;
+    <div class="times">检查 ${esc(main.checked)} · 更新 ${esc(main.updated)}</div>`;
   grid.appendChild(card);
 }
 </script>

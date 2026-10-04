@@ -100,27 +100,41 @@ const FLABELS = {id:"task_id", goal:"Goal", scope:"范围 / AC", owr:"owner / wr
   next:"下一步 next action", deps:"依赖 dependencies", blocker:"blocker", priority:"优先级 priority",
   checked:"检查时间 checked", updated:"更新时间 updated"};
 
+function esc(s){
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function safeUrl(u){
+  if(typeof u !== 'string') return null;
+  const t = u.trim();
+  return /^https?:\/\//i.test(t) ? t : null;
+}
 function goalHtml(g){
-  if(!g.url) return '<span class="na">未接入</span>';
-  const note = g.note ? `<span class="fnote">${g.note}</span>` : '';
-  return `<a href="${g.url}">${g.url}</a>${note}`;
+  if(!g || !g.url) return '<span class="na">未接入</span>';
+  const u = safeUrl(g.url);
+  if(!u) return '<span class="na">链接不可用（已拦截非 http(s) 协议）</span>';
+  const note = g.note ? `<span class="fnote">${esc(g.note)}</span>` : '';
+  return `<a href="${esc(u)}" rel="noopener">${esc(u)}</a>${note}`;
 }
 function renderMember(key){
   const m = BOARD.members.find(x=>x.key===key) || BOARD.members[0];
-  document.getElementById('mName').innerHTML = `${m.name} <span style="font-size:14px;color:var(--muted);font-family:inherit">${m.login} · ${m.role}</span>`;
+  const tasks = m.tasks || [];
+  document.getElementById('mName').innerHTML = `${esc(m.name)} <span style="font-size:14px;color:var(--muted);font-family:inherit">${esc(m.login)} · ${esc(m.role)}</span>`;
   document.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on', b.dataset.k===m.key));
   if(location.hash !== '#'+m.key) history.replaceState(null,'','#'+m.key);
   let html = '';
   for(const [sec, title, hint] of SECTIONS){
-    const ts = m.tasks.filter(t=>t.sec===sec);
-    html += `<div class="section"><div class="section-head"><h2>${title}</h2><span class="n">${ts.length} 项</span><span class="hint">${hint}</span></div>`;
+    const ts = tasks.filter(t=>t.sec===sec);
+    html += `<div class="section"><div class="section-head"><h2>${esc(title)}</h2><span class="n">${ts.length} 项</span><span class="hint">${esc(hint)}</span></div>`;
     if(!ts.length) html += `<div class="empty-box">空 —— 该成员当前在此栏无任务（显式空状态，非数据缺失）</div>`;
     for(const t of ts){
-      const tags = (t.tag && t.tag.length===2) ? `<span class="state-tag ${t.tag[1]}">${t.tag[0]}</span>` : '';
-      html += `<div class="task"><div class="task-top"><div class="task-title">${t.title}${tags}</div><span class="pill ${t.scls}">${t.status}</span></div><dl class="fields">`;
+      const tags = (t.tag && t.tag.length===2) ? `<span class="state-tag ${esc(t.tag[1])}">${esc(t.tag[0])}</span>` : '';
+      html += `<div class="task"><div class="task-top"><div class="task-title">${esc(t.title)}${tags}</div><span class="pill ${esc(t.scls)}">${esc(t.status)}</span></div><dl class="fields">`;
       for(const [fk, fl] of Object.entries(FLABELS)){
-        let v = fk==='goal' ? goalHtml(t.goal) : (t[fk] || '<span class="na">未接入</span>');
-        html += `<dt>${fl}</dt><dd>${v}</dd>`;
+        let v;
+        if(fk==='goal') v = goalHtml(t.goal);
+        else if(t[fk] == null || t[fk] === '') v = '<span class="na">未接入</span>';
+        else v = esc(t[fk]);
+        html += `<dt>${esc(fl)}</dt><dd>${v}</dd>`;
       }
       html += `</dl></div>`;
     }
@@ -132,7 +146,7 @@ const sw = document.getElementById('switcher');
 for(const m of BOARD.members){
   const b = document.createElement('button');
   b.className = 'sw'; b.dataset.k = m.key;
-  b.innerHTML = `${m.name}<span class="cnt">${m.tasks.length} 项</span>`;
+  b.innerHTML = `${esc(m.name)}<span class="cnt">${(m.tasks||[]).length} 项</span>`;
   b.onclick = ()=>renderMember(m.key);
   sw.appendChild(b);
 }
