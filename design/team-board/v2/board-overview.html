@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>团队总览 · 小书童团队看板（设计原型 v2）</title>
+<style>
+:root{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:#241b16; background:#f3eee6; color-scheme:light;
+  --paper:#fffdfa; --line:#ddd0c0; --ink:#241b16; --body:#5c4f45; --muted:#998a7f;
+  --accent:#684936;
+  --green:#2e7d4f; --green-bg:#e9f3ec; --amber:#9a6b1e; --amber-bg:#faf3e2;
+  --red:#b03a2e; --red-bg:#faece8; --violet:#6b4fa1; --violet-bg:#efeaf7;
+  --gray:#6b7280; --gray-bg:#f1efe9;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at top right,#e9ddcb 0,transparent 32rem),linear-gradient(180deg,#f8f4ee 0,#f1ebe2 100%)}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 22px 60px}
+.demo-banner{background:#3a2c22;color:#f5eedd;border-radius:14px;padding:12px 18px;font-size:13px;line-height:1.7;margin-bottom:18px}
+.demo-banner strong{color:#ffd98a}
+.demo-banner code{background:#55432f;padding:1px 6px;border-radius:6px;font-size:12px}
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.crumbs a{color:var(--accent);text-decoration:none;font-weight:700}
+.crumbs .here{color:var(--ink);font-weight:700}
+.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800;color:#8a674d}
+h1{font-family:"Noto Serif SC","Songti SC",serif;font-size:32px;margin:6px 0 8px}
+.sub{color:var(--body);font-size:14px;line-height:1.7;margin:0 0 4px;max-width:860px}
+.meta-row{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 20px}
+.meta-chip{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:7px 13px;font-size:12.5px;color:var(--body)}
+.meta-chip b{color:var(--ink)}
+.meta-chip .warn{color:var(--amber);font-weight:700}
+.legend{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;font-size:12.5px;color:var(--body)}
+.legend span{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+@media(max-width:960px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 16px 45px rgba(64,43,27,.07);display:flex;flex-direction:column;gap:12px}
+.card-head{display:flex;align-items:center;gap:12px}
+.avatar{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:var(--accent);color:#fff;font-family:"Noto Serif SC","Songti SC",serif;font-size:22px;flex:none}
+.who .name{font-size:17px;font-weight:800}
+.who .name .login{font-size:12px;color:var(--muted);font-weight:500;margin-left:6px}
+.who .role{font-size:12.5px;color:var(--body);margin-top:2px}
+.presence{margin-left:auto;flex:none;font-size:12px;display:flex;align-items:center;gap:6px;color:var(--body)}
+.main-task{border-top:1px solid #eadfd2;padding-top:12px}
+.label{font-size:11.5px;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:6px}
+.task-title{font-size:14.5px;font-weight:750;line-height:1.55}
+.task-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pill{font-size:11.5px;border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+.p-impl{background:var(--green-bg);color:var(--green)} .p-wait{background:var(--amber-bg);color:var(--amber)}
+.p-blocked{background:var(--red-bg);color:var(--red)} .p-decide{background:var(--violet-bg);color:var(--violet)}
+.p-done{background:var(--gray-bg);color:var(--gray)}
+.p-id{background:#f4efe8;color:#8a7b70;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:500;font-size:10.5px}
+.more{border-top:1px dashed #e5d8ca;padding-top:10px}
+.more ul{margin:6px 0 0;padding:0;list-style:none}
+.more li{font-size:13px;color:var(--body);padding:5px 0;display:flex;gap:8px;align-items:baseline}
+.more li .t{flex:1;line-height:1.5}
+.card-foot{margin-top:auto;border-top:1px solid #eadfd2;padding-top:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.counts{font-size:12.5px;color:var(--body)}
+.counts b{color:var(--ink)}
+.goto{font-size:13px;font-weight:800;color:var(--accent);text-decoration:none}
+.goto:hover{text-decoration:underline}
+.times{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.7}
+.heartbeat-note{margin-top:18px;background:var(--paper);border:1px dashed #d8c7b2;border-radius:14px;padding:14px 18px;font-size:13px;color:var(--body);line-height:1.75}
+.heartbeat-note b{color:var(--ink)}
+footer{margin-top:26px;text-align:center;color:var(--muted);font-size:11.5px;line-height:1.8}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="demo-banner">
+    <strong>设计原型 · 示意数据</strong> —— 本页全部成员任务内容为<strong>设计示意数据，非真实当前任务</strong>，仅用于评审信息层级、导航与内容落点。本页与个人页由<strong>同一数据源</strong>（<code>board-data.js</code>）生成，task_id 与数量天然一致。<br>
+    原型版本 <code>board-design/v2</code> · 基于 mz-ph-ui PR#63 merge <code>9ab8843</code> 之后的设计先行交付
+  </div>
+
+  <div class="crumbs">小书童水墨书院 / <span class="here">团队看板 · 总览</span></div>
+
+  <div class="eyebrow">小书童 · 六人团队看板</div>
+  <h1>团队总览</h1>
+  <p class="sub">随时看清六人在做什么：每人<strong>主任务</strong>＋其余有效并行认领（"另 N 项"）完整呈现，不遗漏。点击成员卡进入其个人页（自动选中该成员），查看全部当前任务、已批准下一步与待老板决定事项的区分。</p>
+
+  <div class="meta-row">
+    <span class="meta-chip">状态检查时间 <b>2026-10-04 22:00 CST</b>（看板读取时刻）</span>
+    <span class="meta-chip">数据更新时间 <b>以各卡片为准</b>（来源最后写入）</span>
+    <span class="meta-chip"><span class="warn">示意</span> · 接入后由真实状态源生成</span>
+  </div>
+
+  <div class="legend">
+    <span><i class="dot" style="background:var(--green)"></i>实施中</span>
+    <span><i class="dot" style="background:var(--amber)"></i>等待</span>
+    <span><i class="dot" style="background:var(--red)"></i>阻塞</span>
+    <span><i class="dot" style="background:var(--violet)"></i>待老板决定</span>
+    <span><i class="dot" style="background:var(--gray)"></i>已完成（本轮）</span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="heartbeat-note">
+    <b>心跳 ≠ 进展</b>：成员心跳存活只证明在线，不代表任务有进展。本页"检查时间"是看板读取状态源的时刻，"更新时间"是各任务来源最后真实写入的时刻；两者分开标注，过期会显式标 <b>过期</b>，不得用心跳时间冒充任务进展。
+  </div>
+
+  <footer>
+    设计原型 board-design/v2 · 全部内容为示意数据 · 入口：总览 ⇄ 个人页（成员链接带选中态）<br>
+    数据源：board-data.js（一份状态生成两页）
+  </footer>
+</div>
+
+<script src="board-data.js"></script>
+<script>
+const DOT = {doing:'var(--green)', blocked:'var(--red)', wait:'var(--amber)', decide:'var(--violet)', done:'var(--gray)'};
+const SECN = {doing:'进行中', blocked:'阻塞', wait:'等待', decide:'待决定', done:'完成'};
+function presence(m){
+  const s = new Set(m.tasks.map(t=>t.sec));
+  if(s.has('blocked')) return ['阻塞','var(--red)'];
+  if(s.has('doing')) return ['实施中','var(--green)'];
+  if(s.has('wait')) return ['等待','var(--amber)'];
+  if(s.has('decide')) return ['待老板决定','var(--violet)'];
+  return ['已完成','var(--gray)'];
+}
+const grid = document.getElementById('grid');
+for(const m of BOARD.members){
+  const main = m.tasks.find(t=>t.main) || m.tasks[0];
+  const others = m.tasks.filter(t=>t!==main);
+  const counts = {};
+  for(const t of m.tasks) counts[t.sec]=(counts[t.sec]||0)+1;
+  const [plabel,pcolor] = presence(m);
+  const card = document.createElement('div');
+  card.className='card';
+  card.innerHTML = `
+    <div class="card-head">
+      <div class="avatar">${m.name}</div>
+      <div class="who"><div class="name">${m.name} <span class="login">· ${m.login}</span></div><div class="role">${m.role}</div></div>
+      <div class="presence"><i class="dot" style="background:${pcolor}"></i>${plabel}</div>
+    </div>
+    <div class="main-task">
+      <div class="label">主任务</div>
+      <div class="task-title">${main.title}</div>
+      <div class="task-meta"><span class="pill ${main.scls}">${main.status}</span><span class="pill p-id">${main.id}</span></div>
+    </div>
+    <div class="more">
+      <div class="label">另 ${others.length} 项有效并行认领</div>
+      <ul>${others.map(t=>`<li><i class="dot" style="background:${DOT[t.sec]}"></i><span class="t">${t.title}</span></li>`).join('')}</ul>
+    </div>
+    <div class="card-foot">
+      <div class="counts">${['doing','blocked','wait','decide','done'].filter(k=>counts[k]).map(k=>`${SECN[k]} <b>${counts[k]}</b>`).join(' · ')}</div>
+      <a class="goto" href="board-personal.html#${m.key}">个人页 →</a>
+    </div>
+    <div class="times">检查 ${main.checked} · 更新 ${main.updated}</div>`;
+  grid.appendChild(card);
+}
+</script>
+</body>
+</html>

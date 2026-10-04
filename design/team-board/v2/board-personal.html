@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人页模板 · 小书童团队看板（设计原型 v2）</title>
+<style>
+:root{
+  font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+  color:#241b16; background:#f3eee6; color-scheme:light;
+  --paper:#fffdfa; --line:#ddd0c0; --ink:#241b16; --body:#5c4f45; --muted:#998a7f;
+  --accent:#684936;
+  --green:#2e7d4f; --green-bg:#e9f3ec; --amber:#9a6b1e; --amber-bg:#faf3e2;
+  --red:#b03a2e; --red-bg:#faece8; --violet:#6b4fa1; --violet-bg:#efeaf7;
+  --gray:#6b7280; --gray-bg:#f1efe9;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(circle at top right,#e9ddcb 0,transparent 32rem),linear-gradient(180deg,#f8f4ee 0,#f1ebe2 100%)}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 22px 60px}
+.demo-banner{background:#3a2c22;color:#f5eedd;border-radius:14px;padding:12px 18px;font-size:13px;line-height:1.7;margin-bottom:18px}
+.demo-banner strong{color:#ffd98a}
+.demo-banner code{background:#55432f;padding:1px 6px;border-radius:6px;font-size:12px}
+.crumbs{font-size:13px;color:var(--muted);margin-bottom:6px}
+.crumbs a{color:var(--accent);text-decoration:none;font-weight:700}
+.crumbs .here{color:var(--ink);font-weight:700}
+.eyebrow{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:800;color:#8a674d}
+h1{font-family:"Noto Serif SC","Songti SC",serif;font-size:30px;margin:6px 0 4px}
+.sub{color:var(--body);font-size:14px;line-height:1.7;margin:0 0 16px;max-width:860px}
+.switcher{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
+.sw{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:8px 16px;font-size:13.5px;font-weight:700;color:var(--body);cursor:pointer}
+.sw.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.sw .cnt{font-weight:500;opacity:.75;font-size:12px;margin-left:4px}
+.section{margin:22px 0}
+.section-head{display:flex;align-items:baseline;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.section-head h2{font-family:"Noto Serif SC","Songti SC",serif;font-size:19px;margin:0}
+.section-head .n{font-size:12.5px;color:var(--muted)}
+.section-head .hint{font-size:12px;color:var(--muted);margin-left:auto}
+.task{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin:12px 0;box-shadow:0 10px 30px rgba(64,43,27,.05)}
+.task-top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.task-title{font-size:15.5px;font-weight:800;line-height:1.5;flex:1;min-width:220px}
+.pill{font-size:11.5px;border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
+.p-impl{background:var(--green-bg);color:var(--green)} .p-wait{background:var(--amber-bg);color:var(--amber)}
+.p-blocked{background:var(--red-bg);color:var(--red)} .p-decide{background:var(--violet-bg);color:var(--violet)}
+.p-done{background:var(--gray-bg);color:var(--gray)}
+.p-id{background:#f4efe8;color:#8a7b70;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:500;font-size:11px}
+.fields{display:grid;grid-template-columns:150px 1fr;gap:7px 14px;margin-top:14px;font-size:13px}
+.fields dt{color:var(--muted);white-space:nowrap}
+.fields dd{margin:0;color:var(--ink);line-height:1.65;overflow-wrap:anywhere}
+.fields dd a{color:var(--accent);font-weight:700;text-decoration:none}
+.fields dd a:hover{text-decoration:underline}
+.fields dd .fnote{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.fields dd .na{color:var(--muted);font-style:italic}
+.state-tag{display:inline-block;font-size:11.5px;font-weight:800;border-radius:6px;padding:2px 8px;margin-left:8px}
+.st-blocked{background:var(--red-bg);color:var(--red)} .st-noperm{background:#f4efe8;color:#8a674d;border:1px dashed #c9bda9}
+.st-stale{background:var(--amber-bg);color:var(--amber)} .st-unconn{background:#f4efe8;color:var(--muted);border:1px dashed #d8c7b2}
+.next{margin-top:12px;background:#faf6ef;border:1px solid #e7dccb;border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.7}
+.next b{color:var(--ink)}
+.empty-box{border:1.5px dashed #d8c7b2;border-radius:14px;padding:22px;text-align:center;color:var(--muted);font-size:13.5px;background:#faf6ef}
+.times{font-size:11.5px;color:var(--muted);margin-top:10px}
+.heartbeat-note{margin-top:20px;background:var(--paper);border:1px dashed #d8c7b2;border-radius:14px;padding:14px 18px;font-size:13px;color:var(--body);line-height:1.75}
+.heartbeat-note b{color:var(--ink)}
+footer{margin-top:26px;text-align:center;color:var(--muted);font-size:11.5px;line-height:1.8}
+@media(max-width:640px){.fields{grid-template-columns:1fr}.fields dt{margin-top:6px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="demo-banner">
+    <strong>设计原型 · 示意数据</strong> —— 本页全部任务内容为<strong>设计示意数据，非真实当前任务</strong>，仅用于评审信息层级、字段完整性与状态呈现。本页与总览页由<strong>同一数据源</strong>（<code>board-data.js</code>）生成，task_id 与数量天然一致。<br>
+    原型版本 <code>board-design/v2</code> · 模板一套，六成员复用（切换器演示；从总览页进入时自动选中对应成员）
+  </div>
+
+  <div class="crumbs">小书童水墨书院 / <a href="board-overview.html">团队看板 · 总览</a> / <span class="here">个人页</span></div>
+  <div class="eyebrow">小书童 · 六人团队看板</div>
+  <h1 id="mName"></h1>
+  <p class="sub">接续当前所有有效任务。<strong>已批准下一步</strong>与<strong>待老板决定</strong>分栏呈现，不混放；<strong>阻塞</strong>独立分栏，不并入"进行中"。本轮 current-only：不含历史迁移。</p>
+
+  <div class="switcher" id="switcher"></div>
+  <div id="sections"></div>
+
+  <div class="heartbeat-note">
+    <b>心跳 ≠ 进展</b>：每个任务同时标注 <b>检查时间</b>（看板读取状态源）与 <b>更新时间</b>（任务来源最后真实写入）；心跳存活不计入更新时间。过期、未接入、权限不足均显式标注，不留空猜测。
+  </div>
+
+  <footer>设计原型 board-design/v2 · 全部内容为示意数据 · 入口：总览 ⇄ 个人页（#hash 保持所选成员）→ 返回总览<br>数据源：board-data.js（一份状态生成两页）</footer>
+</div>
+
+<script src="board-data.js"></script>
+<script>
+const SECTIONS = [
+  ["doing","进行中","已批准且正在推进的任务"],
+  ["blocked","阻塞","需外部介入才能继续；不计入进行中"],
+  ["wait","等待中","被依赖/资源阻塞，等待外部条件"],
+  ["decide","待老板决定","需老板定夺，不代决定、不推进"],
+  ["done","已完成（本轮）","current-only：仅本轮完成，不含历史迁移"]
+];
+const FLABELS = {id:"task_id", goal:"Goal", scope:"范围 / AC", owr:"owner / writer / reviewer",
+  stage:"stage / activity", repo:"repo / PR / head", evidence:"evidence", result:"result / check time",
+  next:"下一步 next action", deps:"依赖 dependencies", blocker:"blocker", priority:"优先级 priority",
+  checked:"检查时间 checked", updated:"更新时间 updated"};
+
+function goalHtml(g){
+  if(!g.url) return '<span class="na">未接入</span>';
+  const note = g.note ? `<span class="fnote">${g.note}</span>` : '';
+  return `<a href="${g.url}">${g.url}</a>${note}`;
+}
+function renderMember(key){
+  const m = BOARD.members.find(x=>x.key===key) || BOARD.members[0];
+  document.getElementById('mName').innerHTML = `${m.name} <span style="font-size:14px;color:var(--muted);font-family:inherit">${m.login} · ${m.role}</span>`;
+  document.querySelectorAll('.sw').forEach(b=>b.classList.toggle('on', b.dataset.k===m.key));
+  if(location.hash !== '#'+m.key) history.replaceState(null,'','#'+m.key);
+  let html = '';
+  for(const [sec, title, hint] of SECTIONS){
+    const ts = m.tasks.filter(t=>t.sec===sec);
+    html += `<div class="section"><div class="section-head"><h2>${title}</h2><span class="n">${ts.length} 项</span><span class="hint">${hint}</span></div>`;
+    if(!ts.length) html += `<div class="empty-box">空 —— 该成员当前在此栏无任务（显式空状态，非数据缺失）</div>`;
+    for(const t of ts){
+      const tags = (t.tag && t.tag.length===2) ? `<span class="state-tag ${t.tag[1]}">${t.tag[0]}</span>` : '';
+      html += `<div class="task"><div class="task-top"><div class="task-title">${t.title}${tags}</div><span class="pill ${t.scls}">${t.status}</span></div><dl class="fields">`;
+      for(const [fk, fl] of Object.entries(FLABELS)){
+        let v = fk==='goal' ? goalHtml(t.goal) : (t[fk] || '<span class="na">未接入</span>');
+        html += `<dt>${fl}</dt><dd>${v}</dd>`;
+      }
+      html += `</dl></div>`;
+    }
+    html += `</div>`;
+  }
+  document.getElementById('sections').innerHTML = html;
+}
+const sw = document.getElementById('switcher');
+for(const m of BOARD.members){
+  const b = document.createElement('button');
+  b.className = 'sw'; b.dataset.k = m.key;
+  b.innerHTML = `${m.name}<span class="cnt">${m.tasks.length} 项</span>`;
+  b.onclick = ()=>renderMember(m.key);
+  sw.appendChild(b);
+}
+function fromHash(){
+  const k = (location.hash||'').replace('#','');
+  renderMember(BOARD.members.some(m=>m.key===k) ? k : 'bi');
+}
+window.addEventListener('hashchange', fromHash);
+fromHash();
+</script>
+</body>
+</html>
