@@ -181,19 +181,15 @@
 </section>
 
 <section id="agentPersonalEntry" class="card hidden" aria-label="六席个人看板入口">
-<h2>六席个人看板 · 当前项目</h2>
-<p id="agentPersonalEntryState" class="muted">PARTIAL · 来源未全部接入；点击席位读取，不代表个人全量任务。</p>
+<h2>六席个人看板 · 当前上报</h2>
+<p id="agentPersonalEntryState" class="muted">PARTIAL · 点击席位查看当前上报；不采集历史，不代表个人全部任务。</p>
 <div class="agent-personal-seats"><button type="button" data-agent="bi">笔</button><button type="button" data-agent="mo">墨</button><button type="button" data-agent="zhi">纸</button><button type="button" data-agent="yan">砚</button><button type="button" data-agent="juan">卷</button><button type="button" data-agent="xia">匣</button></div>
 </section>
-<section id="agentPersonalBoard" class="card hidden" aria-label="当前项目个人看板">
-<div class="section-title"><div><h2 id="agentPersonalTitle">个人看板</h2><p id="agentPersonalMeta" class="muted">仅当前项目；不代表个人全部任务。</p></div><div class="row"><button id="agentPersonalRefresh" class="secondary" type="button">刷新</button><button id="agentPersonalClose" class="ghost" type="button">关闭</button></div></div>
+<section id="agentPersonalBoard" class="card hidden" aria-label="小书童团队当前上报个人看板">
+<div class="section-title"><div><h2 id="agentPersonalTitle">个人看板</h2><p id="agentPersonalMeta" class="muted">小书童团队当前上报；不代表个人全部任务。</p></div><div class="row"><button id="agentPersonalRefresh" class="secondary" type="button">刷新</button><button id="agentPersonalClose" class="ghost" type="button">关闭</button></div></div>
 <p id="agentPersonalState" class="status" role="status" aria-live="polite">PARTIAL · 来源未全部接入。</p>
-<div class="agent-personal-cols">
-<div class="agent-personal-col"><h3>当前</h3><div id="agentPersonal_current"></div></div>
-<div class="agent-personal-col"><h3>已批准待办</h3><div id="agentPersonal_approved_backlog"></div></div>
-<div class="agent-personal-col"><h3>待决</h3><div id="agentPersonal_pending_decision"></div></div>
-<div class="agent-personal-col"><h3>近期完成（来源记录）</h3><div id="agentPersonal_recent_completed"></div></div>
-<div class="agent-personal-col"><h3>归档</h3><div id="agentPersonal_archived"></div></div>
+<div class="agent-personal-current">
+<div class="agent-personal-col"><h3>当前上报</h3><div id="agentPersonal_current"></div></div>
 </div>
 </section>
 
