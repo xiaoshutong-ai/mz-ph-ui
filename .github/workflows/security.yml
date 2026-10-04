@@ -44,6 +44,7 @@ jobs:
           entry_js = Path("entry.js").read_text(encoding="utf-8")
           account_js = Path("account.js").read_text(encoding="utf-8")
           app = Path("app.js").read_text(encoding="utf-8")
+          studyroom = Path("studyroom.html").read_text(encoding="utf-8")
 
 
           # Whole-repository public-boundary audit. This intentionally scans tracked
@@ -416,6 +417,33 @@ jobs:
           ):
               if marker not in workspace:
                   raise SystemExit("runtime consumer provisioning surface missing: " + marker)
+          for marker in (
+              'data-sr="srChat"',
+              'id="srChatDevice"',
+              'id="srChatConfigList"',
+              'id="srMuseTrusted"',
+              'studyroom_config',
+              'studyroom_config_save',
+              'studyroom_muse_device_save',
+              'Owner 信任 Muse 设备',
+              '匣固定 API',
+              '跟随 Provider Hub',
+          ):
+              if marker not in studyroom:
+                  raise SystemExit("StudyRoom six-seat runtime surface missing: " + marker)
+          for forbidden_studyroom_marker in (
+              "sb_secret_",
+              "SUPABASE_SERVICE_ROLE_KEY",
+              "DEEPSEEK_API_KEY",
+              "ZHIPUAI_API_KEY",
+              "GLM_API_KEY",
+              "STUDYROOM_MUSE_WORKER_TOKEN",
+          ):
+              if forbidden_studyroom_marker in studyroom:
+                  raise SystemExit("StudyRoom public secret boundary violated: " + forbidden_studyroom_marker)
+          if 'value="MUSE"' not in studyroom or 'value="API"' not in studyroom:
+              raise SystemExit("StudyRoom runtime mode controls missing")
+
           if 'id="projectSelect" disabled' in workspace:
               raise SystemExit("project selector must be driven by authorized memberships")
           for marker in (
@@ -705,6 +733,17 @@ jobs:
           PY
       - name: Verify JavaScript syntax
         run: |
+          set -euo pipefail
           node --check entry.js
           node --check account.js
           node --check app.js
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("studyroom.html").read_text(encoding="utf-8")
+          match = re.search(r"(?s)<script>(.*?)</script>", html)
+          if not match:
+              raise SystemExit("studyroom inline script missing")
+          Path("/tmp/studyroom-inline.js").write_text(match.group(1), encoding="utf-8")
+          PY
+          node --check /tmp/studyroom-inline.js
