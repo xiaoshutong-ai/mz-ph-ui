@@ -46,6 +46,14 @@ function parseTaskDetail(task_detail){
 function bad(msg){ const e = new Error(msg); e.code = "BOARD_V1_INVALID"; throw e; }
 
 function validateV1(obj){
+  /* inventory_state 可选，缺省 partial；仅显式 confirmed_empty 才能确认空 */
+  let inventory_state = "partial";
+  if(obj.inventory_state != null && obj.inventory_state !== ""){
+    if(typeof obj.inventory_state !== "string") bad("inventory_state 非法");
+    const v = obj.inventory_state.trim().toLowerCase();
+    if(v !== "partial" && v !== "confirmed_empty") bad("inventory_state 非法值");
+    inventory_state = v;
+  }
   const tasksKnown = obj.tasks !== undefined && obj.tasks !== null;
   let tasks = [];
   if(tasksKnown){
@@ -53,6 +61,10 @@ function validateV1(obj){
     if(obj.tasks.length > 60) bad("tasks 过多");
     tasks = obj.tasks.map((t, i) => validateV1Task(t, i));
   }
+  /* confirmed_empty + 非空 → 生产者冲突，安全降级 */
+  if(inventory_state === "confirmed_empty" && tasks.length > 0)
+    bad("inventory_state=confirmed_empty 但 tasks 非空");
+  const confirmedEmpty = inventory_state === "confirmed_empty" && tasks.length === 0;
   let checked_at = "";
   if(obj.checked_at != null && obj.checked_at !== ""){
     if(typeof obj.checked_at !== "string" || obj.checked_at.length > 80) bad("checked_at 非法");
@@ -63,7 +75,7 @@ function validateV1(obj){
     if(typeof obj.source !== "string" || obj.source.length > 200) bad("source 非法");
     source = obj.source;
   }
-  return {tasksKnown, tasks, checked_at, source};
+  return {tasksKnown, tasks, checked_at, source, inventory_state, confirmedEmpty};
 }
 
 function validateV1Task(t, i){
@@ -144,8 +156,10 @@ function taskFieldsHtml(task){
   return html + '</dl>';
 }
 
-function presenceOf(tasksKnown, tasks){
+function presenceOf(tasksKnown, tasks, confirmedEmpty){
   if(!tasksKnown) return ["未接入", "#998a7f"];
+  if(confirmedEmpty) return ["零任务", "#6b7280"];
+  if(!tasks.length) return ["未上报", "#998a7f"];
   const s = new Set(tasks.map(t => t.sec));
   if(s.has("blocked")) return ["阻塞", "#b03a2e"];
   if(s.has("doing")) return ["实施中", "#2e7d4f"];
@@ -211,15 +225,18 @@ function renderCard(id, name, row, now){
       + '<div class="b2-times">来源 '+esc(row.updated_at || "未核验")+seatStaleHtml(row, now)+'</div></div>';
   }
   // v1
-  const {tasksKnown, tasks, checked_at, source} = parsed.data;
-  const [plabel, pcolor] = presenceOf(tasksKnown, tasks);
+  const {tasksKnown, tasks, checked_at, source, confirmedEmpty} = parsed.data;
+  const [plabel, pcolor] = presenceOf(tasksKnown, tasks, confirmedEmpty);
   let body = "";
   if(!tasksKnown){
     body = '<div class="b2-empty">未接入 —— 该席位上报未含任务清单，数量未知（不是"零任务"确认）</div>'
       + '<div class="b2-foot"><div class="b2-counts">数量未知</div>'+openBtn+'</div>';
-  } else if(!tasks.length){
+  } else if(confirmedEmpty){
     body = '<div class="b2-empty">空 —— 已确认该席位当前无有效任务</div>'
       + '<div class="b2-foot"><div class="b2-counts">0 项</div>'+openBtn+'</div>';
+  } else if(!tasks.length){
+    body = '<div class="b2-empty">未上报，完整数量未知 —— 该席位清单为部分上报，不能确认任务为空</div>'
+      + '<div class="b2-foot"><div class="b2-counts">数量未知</div>'+openBtn+'</div>';
   } else {
     const main = tasks.find(t => t.main) || tasks[0];
     const others = tasks.filter(t => t !== main);
@@ -264,17 +281,19 @@ function renderPersonal(id, name, row, snapshotReadAt){
       + '<div class="b2-task-meta">'+statusPill(row.status, "doing")+'</div>'
       + '<div class="b2-text">'+esc(parsed.text || "未提供说明")+'</div></div>';
   }
-  const {tasksKnown, tasks} = parsed.data;
+  const {tasksKnown, tasks, confirmedEmpty} = parsed.data;
   let html = metaLine;
+  if(confirmedEmpty){
+    return html + '<div class="b2-empty">空 —— 已确认该席位当前无有效任务</div>';
+  }
   for(const sec of SECTIONS){
     const list = tasks.filter(t => t.sec === sec);
     const nlabel = tasksKnown ? list.length + " 项" : "未知";
     html += '<div class="b2-section"><div class="b2-section-head"><h3>'+esc(SECTION_LABEL[sec])
       + '</h3><span class="b2-n">'+nlabel+'</span></div>';
     if(!list.length){
-      html += tasksKnown
-        ? '<div class="b2-empty">空 —— 已确认该席位当前在此栏无任务</div>'
-        : '<div class="b2-empty">未接入 —— 该席位上报未含任务清单（数量未知）</div>';
+      /* 空分栏只能说未上报，不能确认空（fenced 块不证明完整清单） */
+      html += '<div class="b2-empty">未上报，完整数量未知</div>';
     }
     for(const t of list){
       html += '<div class="b2-task"><div class="b2-task-top"><div class="b2-task-title">'+esc(t.title)+'</div>'
