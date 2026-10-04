@@ -113,7 +113,7 @@
 <!-- security-contract runtime values: value="API" value="MUSE" -->
 <div id="srChat" class="sr-section">
 <div class="sr-chat-note">
-普通设备技术上强制走服务端大模型 API。只有 Owner 信任设备才可使用 Muse；匣始终固定 API。Muse 主对话只透传用户原话，不注入水墨书院 SOUL/Memory；旁聊天才使用 Character Contract v1（SOUL + StudyRoom Memory）并与开发主会话隔离。旁聊天运行器未就绪前不可选择。模型密钥继续由 Provider Hub / Vault 管理，本页不接触密钥。
+普通设备技术上强制走服务端大模型 API。只有 Owner 信任设备才可使用 Muse；匣始终固定 API。Muse 主对话只透传用户原话，不注入水墨书院 SOUL/Memory；旁聊天使用 Character Contract v1（SOUL + StudyRoom Memory），并写入 Owner 预先创建的 shuimoshuyuan_* 旁聊天，与开发主会话隔离。Owner 信任设备可在“主对话 / 旁聊天”间逐席切换；未满足运行条件时 SIDE 会自动禁用。模型密钥继续由 Provider Hub / Vault 管理，本页不接触密钥。
 </div>
 <div class="sr-chat-toolbar">
 <label for="srChatDevice"><strong>设备</strong></label>
