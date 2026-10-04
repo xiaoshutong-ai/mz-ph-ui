@@ -1641,57 +1641,6 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
 .agent-personal-task p{margin:6px 0;font-size:12px}
 @media(max-width:900px){.agent-personal-cols{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
-/* ===== 消费者看板 v2（总览卡片 + 个人五栏） ===== */
-.b2-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-@media(max-width:960px){.b2-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.b2-grid{grid-template-columns:1fr}}
-.b2-card{background:#fffdfa;border:1px solid #ddd0c0;border-radius:16px;padding:18px;box-shadow:0 10px 30px rgba(64,43,27,.05);display:flex;flex-direction:column;gap:10px;min-width:0}
-.b2-card-head{display:flex;align-items:center;gap:10px}
-.b2-avatar{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:#684936;color:#fff;font-family:"Noto Serif SC","Songti SC",serif;font-size:20px;flex:none}
-.b2-name{font-size:16px;font-weight:800;color:#241b16}
-.b2-presence{margin-left:auto;flex:none;font-size:12px;display:flex;align-items:center;gap:6px;color:#5c4f45}
-.b2-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:none}
-.b2-dot-doing{background:#2e7d4f}.b2-dot-blocked{background:#b03a2e}.b2-dot-wait{background:#9a6b1e}
-.b2-dot-decide{background:#6b4fa1}.b2-dot-done{background:#6b7280}.b2-dot-unknown{background:#998a7f}
-.b2-main{border-top:1px solid #eadfd2;padding-top:10px;min-width:0}
-.b2-label{font-size:11px;letter-spacing:.06em;color:#998a7f;font-weight:800;margin-bottom:6px}
-.b2-task-title{font-size:14px;font-weight:750;line-height:1.55;color:#241b16;overflow-wrap:anywhere}
-.b2-task-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.b2-pill{font-size:11px;border-radius:999px;padding:4px 10px;font-weight:700;white-space:nowrap}
-.b2-p-impl{background:#e9f3ec;color:#2e7d4f}.b2-p-wait{background:#faf3e2;color:#9a6b1e}
-.b2-p-blocked{background:#faece8;color:#b03a2e}.b2-p-decide{background:#efeaf7;color:#6b4fa1}
-.b2-p-done{background:#f1efe9;color:#6b7280}
-.b2-p-id{background:#f4efe8;color:#8a7b70;font-family:ui-monospace,Menlo,Consolas,monospace;font-weight:500;font-size:10.5px;max-width:100%;min-width:0;white-space:normal;overflow-wrap:anywhere}
-.b2-more{border-top:1px dashed #e5d8ca;padding-top:8px}
-.b2-more ul{margin:6px 0 0;padding:0;list-style:none}
-.b2-more li{font-size:13px;color:#5c4f45;padding:4px 0;display:flex;gap:8px;align-items:baseline}
-.b2-more li span{flex:1;line-height:1.5;overflow-wrap:anywhere}
-.b2-foot{margin-top:auto;border-top:1px solid #eadfd2;padding-top:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.b2-counts{font-size:12px;color:#5c4f45}.b2-counts b{color:#241b16}
-.b2-goto{background:none;border:0;padding:0;font-size:13px;font-weight:800;color:#684936;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
-.b2-goto:hover{color:#4a3423}
-.b2-times{font-size:11px;color:#998a7f;line-height:1.6}
-.b2-empty{border:1.5px dashed #d8c7b2;border-radius:12px;padding:16px;text-align:center;color:#998a7f;font-size:13px;background:#faf6ef;overflow-wrap:anywhere}
-.b2-text{font-size:13px;color:#5c4f45;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
-.b2-meta{font-size:12px;color:#998a7f;margin:10px 0 0;line-height:1.7}
-.b2-section{margin:16px 0}
-.b2-section-head{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
-.b2-section-head h3{font-family:"Noto Serif SC","Songti SC",serif;font-size:17px;margin:0;color:#241b16}
-.b2-n{font-size:12px;color:#998a7f}
-.b2-task{background:#fffdfa;border:1px solid #ddd0c0;border-radius:14px;padding:16px 18px;margin:10px 0;min-width:0}
-.b2-task-top{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
-.b2-task-top .b2-task-title{flex:1;min-width:200px}
-.b2-fields{display:grid;grid-template-columns:150px 1fr;gap:6px 12px;margin-top:12px;font-size:13px}
-.b2-fields dt{color:#998a7f;white-space:nowrap}
-.b2-fields dd{margin:0;color:#241b16;line-height:1.65;overflow-wrap:anywhere;min-width:0}
-.b2-fields dd a{color:#684936;font-weight:700;text-decoration:none}
-.b2-fields dd a:hover{text-decoration:underline}
-.b2-fnote{display:block;font-size:12px;color:#998a7f;margin-top:2px}
-.b2-mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
-.b2-stale{color:#b03a2e;font-weight:800}
-@media(max-width:640px){.b2-fields{grid-template-columns:1fr}.b2-fields dt{margin-top:6px}}
-
-
 /* ===== 水墨书院实时看板 v3 · 中文视觉系统 ===== */
 #srAgents{
   --sr-ink:#18211d;
@@ -1945,6 +1894,10 @@ body.steward-focus-mode footer:not(.steward-footer){display:none}
   transform:translateY(-2px);
   border-color:#cad8d0;
   box-shadow:0 17px 38px rgba(37,57,48,.085);
+}
+.b3-seat-card.is-selected{
+  border-color:#9fbcae;
+  box-shadow:0 18px 42px rgba(45,91,72,.12),inset 0 0 0 1px rgba(71,122,100,.14);
 }
 .b3-seat-head{
   display:flex;
