@@ -165,7 +165,7 @@ jobs:
               "account.js",
               "app.js",
               ".github/workflows/pages.yml",
-              ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
+              ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",\n              "tests/agent-control-v2-web.test.mjs",
           } | set(character_assets)
           allowed_prefixes = (
               "updates/",
