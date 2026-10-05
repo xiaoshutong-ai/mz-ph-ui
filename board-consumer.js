@@ -648,7 +648,7 @@ function controlSummary(rows,seatNames){
 
 function freshnessChip(label,value){
   const fresh=controlFreshness(value);
-  return '<span class="b4-fresh b4-fresh-'+esc(fresh.key)+'"><span>'+esc(label)+'</span><b>'+esc(fresh.label)+'</b></span>';
+  return '<span class="b4-fresh b4-fresh-'+esc(fresh.key)+'" aria-label="'+esc(label+fresh.label)+'"><span>'+esc(label)+'</span><b>'+esc(fresh.label)+'</b></span>';
 }
 
 function controlTimeLine(row){
