@@ -942,7 +942,7 @@ jobs:
             B.validateControlRows([row("bi",{activity_state:"busy",current_task_title:"<img onerror=x>",current_task_detail:"<script>x</script>"})],N)[0],
             Date.parse(now));
           assert.match(escaped,/&lt;img onerror=x&gt;/);
-          assert.match(escaped,/&lt;script&gt;x&lt;\\/script&gt;/);
+          assert.ok(escaped.includes("&lt;script&gt;x&lt;/script&gt;"));
           assert.doesNotMatch(escaped,/<h4><img/);
           assert.doesNotMatch(escaped,/<p><script>/);
 
