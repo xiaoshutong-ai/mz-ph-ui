@@ -4252,7 +4252,7 @@ $("backupTotpCopyBtn").addEventListener("click",async()=>{
   }
 });
 $("logoutBtn").addEventListener("click",logout);
-$("opsLogoutBtn").addEventListener("click",logout);$("agentStatusOpsRefresh")?.addEventListener("click",()=>{loadAgentStatusOps().catch(()=>{});});
+$("opsLogoutBtn").addEventListener("click",logout);$("agentStatusOpsRefresh")?.addEventListener("click",()=>{refreshAgentStatusOps().catch(()=>{});});
 /* 两个入口均只读取当前获权项目的个人板。 */
 $("agentStatusOpsList")?.addEventListener("click",(event)=>{
   const target=event.target;
@@ -4329,7 +4329,6 @@ document.querySelectorAll("[data-steward-scroll]").forEach(button=>{
 });
 
 
-// Refresh only the read-only team panel; never refresh device/config mutations.
-// 打开读取：进入运维台时读一次（见 enterOperationsHub）；手动读取：刷新按钮；
-// 可见时1小时兜底：见 agentOpsEnsureTimers；隐藏暂停，仅到期或在途受阻时补读：见 agentOpsOnVisibilityChange。
+// 六席状态控制面：进入运维台/小时兜底只读 state；手动“刷新”只发一次 REPORT_STATUS，
+// 随后的短时对账仅重复读 state，不重复发命令。隐藏时暂停所有定时读取。
 document.addEventListener("visibilitychange",agentOpsOnVisibilityChange);
