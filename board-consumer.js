@@ -526,10 +526,60 @@ function compactControlText(value,max=180){
 function isGenericControlTitle(value){
   const text=String(value||"").trim();
   return !text
-    || /^已上报[:：]/.test(text)
     || /^任务状态待核实$/.test(text)
     || /^当前任务待核验$/.test(text)
-    || /^暂无可核验任务$/.test(text);
+    || /^暂无可核验任务$/.test(text)
+    || /^已确认无任务$/.test(text);
+}
+
+function isMetaControlTitle(value){
+  return /(?:字段|示例|说明|文案|讨论|中间点|格式|措辞)/u.test(String(value||""));
+}
+
+function humanizeControlTitle(value){
+  let text=compactControlText(value,200);
+  if(!text) return "";
+  text=text
+    .replace(/^(?:[-*•]+\s*|\d+[.)、．]\s*(?:[✅☑✓]\s*)?)/u,"")
+    .trim();
+  if(!text || /^(?:none|->|heartbeat routine|心跳|存活|任务状态待核实|当前任务待核验|暂无可核验任务|已确认无任务)$/iu.test(text)){
+    return "";
+  }
+
+  const reported=text.match(/^已上报[:：]\s*(已完成|进行中|等待)\s*(\d+)/u);
+  if(reported){
+    if(reported[1]==="已完成") return "最近完成 "+reported[2]+" 项";
+    if(reported[1]==="进行中") return "最近有 "+reported[2]+" 项进行中";
+    return "最近有 "+reported[2]+" 项等待";
+  }
+
+  if(isMetaControlTitle(text)) return "";
+
+  const pr=text.match(/PR\s*#?\s*(\d+)/iu);
+  if(pr && /CI\s*(?:运行中|进行中|running)/iu.test(text)){
+    return "PR #"+pr[1]+" · CI 运行中";
+  }
+  if(pr && /(?:已合入|已合并|\bmerged\b)/iu.test(text)){
+    return "PR #"+pr[1]+" · 已合入";
+  }
+  if(/(?:SHOULD_FIX|MUST_FIX|UNVERIFIED)/iu.test(text)
+      && /(?:已完成|完成|已修复|已闭环)/u.test(text)){
+    return "最近任务已完成";
+  }
+  if(/(?:已查\s*GitHub|无新评论|无新派单|巡检)/iu.test(text)
+      && /(?:已完成|完成|无可推进项|待命)/u.test(text)){
+    return "例行巡检已完成";
+  }
+
+  text=text
+    .replace(/\bhead\s*[=:]\s*[0-9a-f]{7,40}\b/giu,"")
+    .replace(/\bmergeable_state\s*=\s*[a-z_-]+\b/giu,"")
+    .replace(/\bstate\s*=\s*(?:open|closed|merged)\b/giu,"")
+    .replace(/\s{2,}/g," ")
+    .replace(/\s+([，。；：,:;])/g,"$1")
+    .replace(/^[，。；：,:;\s]+|[，；：,:;\s]+$/g,"")
+    .trim();
+  return compactControlText(text,140);
 }
 
 function relativeControlTime(value,nowMs){
@@ -589,10 +639,11 @@ function controlTask(row){
   const snap=controlDetailSnapshot(sourceDetail);
   const primary=controlPrimaryTask(snap.tasks,activity);
   const titleSource=active&&currentTitle?currentTitle:lastTitle;
+  const titleMeta=isMetaControlTitle(titleSource);
+  const displayTitle=humanizeControlTitle(titleSource);
+  const primaryTitle=humanizeControlTitle(primary?.title)||compactControlText(primary?.title,140);
   const fallbackTitle=active?"当前任务待核验":"暂无可核验任务";
-  const title=primary&&isGenericControlTitle(titleSource)
-    ?primary.title
-    :(titleSource||primary?.title||fallbackTitle);
+  const title=displayTitle||primaryTitle||fallbackTitle;
 
   let detail="";
   if(activity==="blocked"&&row?.last_blocker){
@@ -611,7 +662,11 @@ function controlTask(row){
     detail=currentDetail;
   }
 
-  if(!detail){
+  if(titleMeta){
+    detail=active
+      ?"旧上报含说明性文案，任务标题等待下一次可信状态更新"
+      :"旧上报含说明性文案，最近事项等待重新核验";
+  }else if(!detail){
     detail=activity==="blocked"?"阻塞原因尚未上报":
       activity==="busy"?"进展说明尚未上报":
       snap.confirmedEmpty?"本席已确认当前没有有效任务":
@@ -696,7 +751,7 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
     const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
     const task=controlTask(row);
     const secondary=task.secondary.length
-      ?'<ul class="b4-related">'+task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(compactControlText(item.title,90))+'</span></li>').join("")+'</ul>'
+      ?'<ul class="b4-related">'+task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(humanizeControlTitle(item.title)||compactControlText(item.title,90))+'</span></li>').join("")+'</ul>'
       :"";
     const legacy=row.refresh_mode==="legacy_passive"
       ?'<span class="b4-mode b4-mode-passive">被动</span>'
@@ -748,7 +803,7 @@ function renderControlPersonal(id,name,row,snapshotReadAt){
 
   const related=task.secondary.length
     ?'<div class="b4-personal-related"><span>同批事项</span><ul>'
-      +task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(compactControlText(item.title,120))+'</span></li>').join("")
+      +task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(humanizeControlTitle(item.title)||compactControlText(item.title,120))+'</span></li>').join("")
       +'</ul></div>'
     :"";
 
@@ -773,6 +828,7 @@ return {
   V1_SCHEMA, SECTIONS, SECTION_LABEL,
   esc, safeUrl,
   parseTaskDetail, validateV1, validateControlRows,
+  humanizeControlTitle,
   renderOverview, renderPersonal,
   renderControlOverview, renderControlPersonal
 };
