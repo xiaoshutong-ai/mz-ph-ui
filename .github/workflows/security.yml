@@ -896,6 +896,11 @@ jobs:
           assert.ok(escaped.includes('&lt;img'),'escaped task title missing');
           console.log('BOARD_CHINESE_RENDER=PASS');
           NODE
+      - name: Verify StudyRoom board v4 renderer
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: node --test tools/studyroom-board-v4.test.mjs
+
       - name: Verify bounded agent-control v2 board contracts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         # Only trusted main executes production source. pull_request_target remains static-only.
