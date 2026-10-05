@@ -19,6 +19,7 @@ jobs:
         shell: bash
         env:
           PR_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+          PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           case "$PR_AUTHOR_ASSOCIATION" in
@@ -26,8 +27,15 @@ jobs:
               echo "ORGANIZATION_MEMBER_PR=PASS"
               ;;
             *)
-              echo "::error::External pull requests are not accepted by policy (author_association=$PR_AUTHOR_ASSOCIATION)."
-              exit 1
+              case "$PR_AUTHOR_LOGIN" in
+                xst-xia|EmilioJI)
+                  echo "TRUSTED_MAINTAINER_PR=PASS"
+                  ;;
+                *)
+                  echo "::error::External pull requests are not accepted by policy (author=$PR_AUTHOR_LOGIN, association=$PR_AUTHOR_ASSOCIATION)."
+                  exit 1
+                  ;;
+              esac
               ;;
           esac
 
@@ -263,7 +271,9 @@ jobs:
           member_gate_markers = (
               "Admit organization-member pull requests only",
               "PR_AUTHOR_ASSOCIATION:",
+              "PR_AUTHOR_LOGIN:",
               "MEMBER|OWNER)",
+              "xst-xia|EmilioJI)",
               "External pull requests are not accepted by policy",
           )
           for marker in member_gate_markers:
