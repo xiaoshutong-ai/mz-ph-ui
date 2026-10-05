@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
       pages: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, mz-ph-ui]
     timeout-minutes: 5
     steps:
       - name: Checkout
@@ -138,7 +138,7 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, mz-ph-ui]
     timeout-minutes: 5
     environment:
       name: github-pages
