@@ -49,15 +49,22 @@ jobs:
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
           style = Path("style.css").read_text(encoding="utf-8")
 
-          # The v3 board visual system is token-driven: raw colors live only in the
-          # #srAgents token declaration, never scattered through component rules.
+          # StudyRoom board visual systems stay token-driven. During the v3→v4
+          # rollout the trusted base gate accepts exactly either approved protocol,
+          # then applies the same raw-color boundary to the active implementation.
           v3_marker = "/* ===== 水墨书院实时看板 v3 · 中文视觉系统 ===== */"
+          v4_marker = "/* ===== 水墨书院实时看板 v4 · Calm Control Surface ===== */"
           v3_start = style.find(v3_marker)
-          token_start = style.find("#srAgents{", v3_start)
+          v4_start = style.find(v4_marker)
+          if (v3_start >= 0) == (v4_start >= 0):
+              raise SystemExit("StudyRoom must contain exactly one approved visual-system marker")
+          board_version = "v4" if v4_start >= 0 else "v3"
+          visual_start = v4_start if board_version == "v4" else v3_start
+          token_start = style.find("#srAgents{", visual_start)
           token_end = style.find("\n}", token_start)
-          if v3_start < 0 or token_start < 0 or token_end <= token_start:
-              raise SystemExit("StudyRoom v3 visual token boundary missing")
-          v3_token_block = style[token_start:token_end]
+          if token_start < 0 or token_end <= token_start:
+              raise SystemExit("StudyRoom visual token boundary missing")
+          token_block = style[token_start:token_end]
           for token in (
               "--sr-text:", "--sr-surface:", "--sr-border:", "--sr-jade:",
               "--sr-danger:", "--sr-wait:", "--sr-decision:", "--sr-done:",
@@ -65,12 +72,12 @@ jobs:
               "--sr-seat-yan:", "--sr-seat-juan:", "--sr-seat-xia:",
               "--sr-shadow:", "--sr-focus:",
           ):
-              if token not in v3_token_block:
+              if token not in token_block:
                   raise SystemExit("StudyRoom semantic visual token missing: " + token)
-          v3_component_rules = style[token_end + 2:]
+          component_rules = style[token_end + 2:]
           raw_component_colors = re.findall(
               r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)",
-              v3_component_rules,
+              component_rules,
           )
           if raw_component_colors:
               raise SystemExit(
@@ -87,7 +94,7 @@ jobs:
           if 'style="' in board_surface:
               raise SystemExit("StudyRoom board must use shared CSS classes, not inline style attributes")
 
-          board_required_copy = (
+          board_required_copy_v3 = (
               "院务态势 · 实时",
               "六席实时看板",
               "先看全院，再看个人",
@@ -104,10 +111,27 @@ jobs:
               "下一步",
               "阻塞原因",
           )
+          board_required_copy_v4 = (
+              "院务态势",
+              "六席运行态势",
+              "状态讲事实，观察讲可见性",
+              "全院概览",
+              "最近可见",
+              "最近事项",
+              "个人看板",
+              "席位详情",
+              "状态摘要",
+              "状态来源",
+          )
           board_source = board_surface + "\n" + board_consumer
+          board_required_copy = board_required_copy_v4 if board_version == "v4" else board_required_copy_v3
           for marker in board_required_copy:
               if marker not in board_source:
                   raise SystemExit("Chinese-first board copy missing: " + marker)
+          if board_version == "v4":
+              for marker in ("function controlDetailSnapshot(detail)", "compactControlText", "relativeControlTime"):
+                  if marker not in board_consumer:
+                      raise SystemExit("StudyRoom v4 renderer contract missing: " + marker)
 
           board_forbidden_visible_copy = (
               "UNAVAILABLE ·",
@@ -928,8 +952,33 @@ jobs:
             B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,freshness:"stale"}:r),N),N,"fixture"
           );
           assert.match(overview,/状态新鲜/);
-          assert.match(overview,/观察器在线/);
+          assert.match(overview,/(观察器在线|最近可见)/);
           assert.match(overview,/状态陈旧/);
+
+          const style=fs.readFileSync("style.css","utf8");
+          const boardV4=style.includes("水墨书院实时看板 v4 · Calm Control Surface");
+          if(boardV4){
+            const xiaDetail=JSON.stringify({
+              schema:"xia-team-board/v1",
+              inventory_state:"partial",
+              tasks:[{
+                id:"team-board-v2",sec:"done",title:"总实时看板+个人实时看板",
+                status:"LANDED",result:"六席生产数据持续可读",
+                next:"继续观察自动 heartbeat freshness",main:true
+              }],
+              checked_at:"2026-10-04T17:16:15Z",source:"governance#9"
+            });
+            const xia=B.validateControlRows([row("xia",{
+              activity_state:"unknown",freshness:"stale",observer_freshness:"fresh",
+              last_task_title:"已上报：已完成 1",last_task_detail:xiaDetail
+            })],N)[0];
+            const xiaHtml=B.renderControlOverview([xia],{xia:"匣"},"fixture")
+              +B.renderControlPersonal("xia","匣",xia,Date.parse(now));
+            assert.match(xiaHtml,/总实时看板\+个人实时看板/);
+            assert.match(xiaHtml,/六席生产数据持续可读/);
+            assert.doesNotMatch(xiaHtml,/xia-team-board\/v1/);
+            assert.doesNotMatch(xiaHtml,/"schema"/);
+          }
 
           let personal=B.renderControlPersonal("bi","笔",valid[0],Date.parse(now));
           assert.match(personal,/LAST/);
