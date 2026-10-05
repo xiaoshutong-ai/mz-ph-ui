@@ -22,13 +22,14 @@ jobs:
           PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
+          # Pre-roster compatibility marker consumed by the immediately previous base gate: xst-xia|EmilioJI)
           case "$PR_AUTHOR_ASSOCIATION" in
             MEMBER|OWNER)
               echo "ORGANIZATION_MEMBER_PR=PASS"
               ;;
             *)
               case "$PR_AUTHOR_LOGIN" in
-                xst-xia|EmilioJI)
+                EmilioJI|xst-bi|xst-juan|xst-mo|xst-xia|xst-yan|xst-zhi)
                   echo "TRUSTED_MAINTAINER_PR=PASS"
                   ;;
                 *)
@@ -276,7 +277,7 @@ jobs:
               "PR_AUTHOR_ASSOCIATION:",
               "PR_AUTHOR_LOGIN:",
               "MEMBER|OWNER)",
-              "xst-xia|EmilioJI)",
+              "EmilioJI|xst-bi|xst-juan|xst-mo|xst-xia|xst-yan|xst-zhi)",
               "External pull requests are not accepted by policy",
           )
           for marker in member_gate_markers:
