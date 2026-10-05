@@ -166,7 +166,6 @@ jobs:
               "app.js",
               ".github/workflows/pages.yml",
               ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
-              "tests/agent-control-v2-web.test.mjs",
           } | set(character_assets)
           allowed_prefixes = (
               "updates/",
@@ -898,8 +897,82 @@ jobs:
           NODE
       - name: Verify bounded agent-control v2 board contracts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        # Only trusted main executes repository test code. pull_request_target remains static-only.
+        # Only trusted main executes production source. pull_request_target remains static-only.
         shell: bash
         run: |
           set -euo pipefail
-          node --test tests/agent-control-v2-web.test.mjs
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+          const app=fs.readFileSync("app.js","utf8");
+          const room=fs.readFileSync("studyroom.html","utf8");
+          const pub=fs.readFileSync("status-public.js","utf8");
+          const imported=await import("./board-consumer.js");
+          const B=imported.default?.renderControlOverview?imported.default:(globalThis.BoardConsumer||imported);
+          const N={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
+          const now="2026-10-05T04:00:00.000Z";
+          const row=(id,o={})=>({agent_id:id,display_name:N[id],adapter_type:id==="xia"?"dot":"muse",
+            refresh_mode:id==="xia"?"legacy_passive":"active",activity_state:"idle",freshness:"fresh",
+            observer_freshness:"fresh",current_task_title:null,current_task_detail:null,current_progress:null,
+            last_task_title:"SYNTHETIC_"+id,last_task_detail:"done",last_blocker:null,last_report_at:now,
+            last_observed_at:now,report_source:id==="xia"?"legacy-github":"xstpilot",revision:1,...o});
+          const rows=Object.keys(N).map(id=>row(id));
+
+          const valid=B.validateControlRows(rows,N);
+          assert.equal(valid.length,6);
+          assert.equal(valid.at(-1).refresh_mode,"legacy_passive");
+          assert.throws(()=>B.validateControlRows([...rows,row("bi")],N));
+          assert.throws(()=>B.validateControlRows([{...row("bi"),current_progress:101}],N));
+
+          const overview=B.renderControlOverview(
+            B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,freshness:"stale"}:r),N),N,"fixture"
+          );
+          assert.match(overview,/状态新鲜/);
+          assert.match(overview,/观察器在线/);
+          assert.match(overview,/状态陈旧/);
+
+          let personal=B.renderControlPersonal("bi","笔",valid[0],Date.parse(now));
+          assert.match(personal,/LAST/);
+          assert.doesNotMatch(personal,/CURRENT/);
+          const busy=B.validateControlRows([row("mo",{activity_state:"busy",current_task_title:"CURRENT_JOB",current_progress:42})],N)[0];
+          personal=B.renderControlPersonal("mo","墨",busy,Date.parse(now));
+          assert.match(personal,/CURRENT_JOB/);
+          assert.match(personal,/42%/);
+          const escaped=B.renderControlPersonal("bi","笔",
+            B.validateControlRows([row("bi",{activity_state:"busy",current_task_title:"<img onerror=x>",current_task_detail:"<script>x</script>"})],N)[0],
+            Date.parse(now));
+          assert.doesNotMatch(escaped,/<img /);
+          assert.doesNotMatch(escaped,/<script>/);
+
+          assert.match(app,/AGENT_CONTROL_V2_PATH="\/functions\/v1\/studyroom-agent-control"/);
+          assert.match(app,/runAgentStatusRequest\("state"\)/);
+          assert.match(app,/runAgentStatusRequest\("refresh"\)/);
+          assert.match(app,/AGENT_OPS_FOLLOWUP_LIMIT=6/);
+          assert.doesNotMatch(app,/\/rest\/v1\/agent_status\?select=/);
+          const appFollow=app.slice(app.indexOf("function agentOpsStartFollowup"),app.indexOf("function agentOpsErrorMessage"));
+          assert.match(appFollow,/loadAgentStatusOps\(\)/);
+          assert.doesNotMatch(appFollow,/refreshAgentStatusOps\(\)/);
+
+          assert.match(room,/SR_AGENT_CONTROL_PATH="\/functions\/v1\/studyroom-agent-control"/);
+          assert.match(room,/BoardConsumer\.validateControlRows/);
+          assert.match(room,/BoardConsumer\.renderControlOverview/);
+          assert.match(room,/SR_AGENT_FOLLOWUP_LIMIT=6/);
+          assert.doesNotMatch(room,/\/rest\/v1\/agent_status\?select=/);
+          const all=room.slice(room.indexOf("function refreshAll(){"),room.indexOf("(function(){",room.indexOf("function refreshAll(){")));
+          assert.match(all,/loadAgents\(\)/);
+          assert.doesNotMatch(all,/refreshAgents\(\)/);
+          const follow=room.slice(room.indexOf("function startSrAgentFollowup"),room.indexOf("async function loadAgents"));
+          assert.match(follow,/loadAgents\(\)/);
+          assert.doesNotMatch(follow,/refreshAgents\(\)/);
+
+          assert.match(pub,/\/rest\/v1\/agent_status_public\?select=\*&order=id/);
+          assert.doesNotMatch(pub,/studyroom-agent-control/);
+          assert.doesNotMatch(pub,/method:\s*"POST"/);
+
+          const scripts=[...room.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m=>m[1]).filter(Boolean);
+          assert.ok(scripts.length);
+          for(const source of scripts)assert.doesNotThrow(()=>new Function(source));
+          assert.equal(typeof B.renderOverview,"function");
+          assert.equal(typeof B.renderPersonal,"function");
+          console.log("AGENT_CONTROL_V2_WEB_CONTRACT=PASS");
+          NODE
