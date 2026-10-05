@@ -135,16 +135,22 @@
 <div id="srAgents" class="sr-section sr-board-section">
 <section class="sr-board-hero" aria-labelledby="srBoardTitle">
   <div class="sr-board-hero-copy">
-    <span class="sr-board-kicker">院务态势 · 实时</span>
-    <h2 id="srBoardTitle">六席实时看板</h2>
-    <p>先看全院，再看个人。状态、任务与阻塞一屏可读，技术细节按需展开。</p>
+    <div class="sr-board-kicker-row">
+      <span class="sr-board-kicker">院务态势</span>
+      <span class="sr-board-live"><i aria-hidden="true"></i>实时</span>
+    </div>
+    <h2 id="srBoardTitle">六席运行态势</h2>
+    <p>状态讲事实，观察讲可见性。先看谁在做什么，再处理真正需要关注的席位。</p>
   </div>
   <div class="sr-board-actions">
-    <span id="srAgentState" class="sr-board-sync" role="status" aria-live="polite">等待首次读取</span>
-    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">刷新状态</button>
+    <div class="sr-board-readout">
+      <span>最近读取</span>
+      <strong id="srAgentState" role="status" aria-live="polite">等待首次读取</strong>
+    </div>
+    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">刷新六席</button>
   </div>
 </section>
-<p id="srAgentMeta" class="sr-board-note">当前看板展示六席状态投影；观察器在线不等于任务事实刚更新，最终交付仍以 Goal、PR、Review、CI 与设备验收为准。</p>
+<p id="srAgentMeta" class="sr-board-note">状态新鲜度来自最近语义事实；“最近可见”只表示观察链路仍可达，不等于任务刚发生变化。</p>
 <div id="srAgentOverview" class="sr-board-overview"></div>
 
 <section id="srAgentPersonal" class="sr-board-personal hidden" aria-labelledby="srAgentPersonalTitle">
@@ -546,13 +552,13 @@ function srFreshLabel(value){
   return value==="fresh"?"新鲜":value==="stale"?"陈旧":"未曾更新";
 }
 function srAgentMode(row){
-  if(row?.refresh_mode==="legacy_passive") return "被动同步";
-  return row?.adapter_type==="muse"?"只读观察":"按需刷新";
+  if(row?.refresh_mode==="legacy_passive") return "云端被动同步";
+  return row?.adapter_type==="muse"?"Muse 只读观察":"按需刷新";
 }
 function srAgentStateText(row){
   if(!row) return "暂不可用 · 尚未取得本席当前状态";
   const activity={busy:"工作中",idle:"空闲",blocked:"受阻",unavailable:"不可用",unknown:"待核验"}[row.activity_state]||"待核验";
-  return activity+" · 状态"+srFreshLabel(row.freshness)+" · 观察器"+srFreshLabel(row.observer_freshness)+" · "+srAgentMode(row);
+  return activity+" · 状态"+srFreshLabel(row.freshness)+" · 可见"+srFreshLabel(row.observer_freshness)+" · "+srAgentMode(row);
 }
 
 function syncSrAgentSelection(){
@@ -591,7 +597,7 @@ function applySrAgentRows(value){
     rows,SR_AGENT_NAMES,"水墨书院 · 六席当前状态投影"
   );
   document.getElementById("srAgentMeta").textContent=
-    "数据口径：状态新鲜度基于最近新事实，观察器新鲜度仅表示最近成功读取；当前投影不替代 Goal、PR、Review、CI 与设备验收证据。";
+    "数据口径：状态新鲜度来自最近语义事实；最近可见仅表示观察链路可达。当前投影不替代 Goal、PR、Review、CI 与设备验收证据。";
   if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
   else syncSrAgentSelection();
   return rows;
@@ -654,10 +660,10 @@ async function loadAgents(){
     const rows=applySrAgentRows(value.agents);
     if(maybeFinishSrAgentFollowup(rows)){
       document.getElementById("srAgentState").textContent=
-        "状态刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+        rows.length+" 席 · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
     }else{
       document.getElementById("srAgentState").textContent=
-        "已读取 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+        rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
     }
   }catch(e){
     _srAgentRows=[];
@@ -687,9 +693,9 @@ async function refreshAgents(){
     const active=Array.isArray(value.refresh?.active_agents)?value.refresh.active_agents.length:0;
     const passive=Array.isArray(value.refresh?.passive_agents)?value.refresh.passive_agents.join("、"):"";
     document.getElementById("srAgentState").textContent=
-      "已发起 "+active+" 席只读状态观察"
-      +(passive?"；"+passive+" 保持被动同步":"")
-      +" · 不会向 Muse 主/旁聊天写消息";
+      "已请求 "+active+" 席实时观察"
+      +(passive?" · "+passive+" 保持被动同步":"")
+      +" · 只读，不写入 Muse";
     startSrAgentFollowup(value.refresh,rows);
   }catch(e){
     document.getElementById("srAgentState").textContent="刷新失败 · "+(e.message||e);
