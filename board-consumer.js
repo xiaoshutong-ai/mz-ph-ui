@@ -526,6 +526,7 @@ function compactControlText(value,max=180){
 function isGenericControlTitle(value){
   const text=String(value||"").trim();
   return !text
+    || /^已上报[:：]/.test(text)
     || /^任务状态待核实$/.test(text)
     || /^当前任务待核验$/.test(text)
     || /^暂无可核验任务$/.test(text)
@@ -639,11 +640,14 @@ function controlTask(row){
   const snap=controlDetailSnapshot(sourceDetail);
   const primary=controlPrimaryTask(snap.tasks,activity);
   const titleSource=active&&currentTitle?currentTitle:lastTitle;
-  const titleMeta=isMetaControlTitle(titleSource);
+  const preferPrimary=Boolean(primary&&isGenericControlTitle(titleSource));
+  const titleMeta=isMetaControlTitle(titleSource)&&!primary;
   const displayTitle=humanizeControlTitle(titleSource);
   const primaryTitle=humanizeControlTitle(primary?.title)||compactControlText(primary?.title,140);
   const fallbackTitle=active?"当前任务待核验":"暂无可核验任务";
-  const title=displayTitle||primaryTitle||fallbackTitle;
+  const title=preferPrimary
+    ?(primaryTitle||displayTitle||fallbackTitle)
+    :(displayTitle||primaryTitle||fallbackTitle);
 
   let detail="";
   if(activity==="blocked"&&row?.last_blocker){
