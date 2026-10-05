@@ -509,31 +509,125 @@ const CONTROL_ACTIVITY = {
 function controlFreshness(value){
   if(value === "fresh") return {key:"fresh",label:"新鲜"};
   if(value === "stale") return {key:"stale",label:"陈旧"};
-  return {key:"unknown",label:"未曾更新"};
+  return {key:"unknown",label:"未更新"};
 }
 
 function controlMode(row){
-  if(row?.refresh_mode === "legacy_passive") return "被动兼容同步";
-  return row?.adapter_type === "muse" ? "Muse 主窗口只读观察" : "按需刷新";
+  if(row?.refresh_mode === "legacy_passive") return "云端被动同步";
+  return row?.adapter_type === "muse" ? "Muse 只读观察" : "按需刷新";
+}
+
+function compactControlText(value,max=180){
+  const text=String(value==null?"":value).replace(/\s+/g," ").trim();
+  if(!text) return "";
+  return text.length>max?text.slice(0,Math.max(1,max-1)).trimEnd()+"…":text;
+}
+
+function isGenericControlTitle(value){
+  const text=String(value||"").trim();
+  return !text
+    || /^已上报[:：]/.test(text)
+    || /^任务状态待核实$/.test(text)
+    || /^当前任务待核验$/.test(text)
+    || /^暂无可核验任务$/.test(text);
+}
+
+function relativeControlTime(value,nowMs){
+  const t=Date.parse(value||"");
+  const now=Number.isFinite(nowMs)?nowMs:Date.now();
+  if(!Number.isFinite(t)) return "未曾";
+  let age=Math.max(0,now-t);
+  if(age<60000) return "刚刚";
+  const minutes=Math.floor(age/60000);
+  if(minutes<60) return minutes+" 分钟前";
+  const hours=Math.floor(minutes/60);
+  if(hours<24) return hours+" 小时前";
+  const days=Math.floor(hours/24);
+  if(days<7) return days+" 天前";
+  return formatDateTime(value);
+}
+
+function controlDetailSnapshot(detail){
+  const parsed=parseTaskDetail(detail);
+  if(parsed.kind!=="v1"){
+    return {kind:parsed.kind,text:parsed.kind==="text"?compactControlText(parsed.text,220):"",tasks:[],checked_at:"",confirmedEmpty:false};
+  }
+  return {
+    kind:"v1",
+    text:"",
+    tasks:Array.isArray(parsed.data.tasks)?parsed.data.tasks:[],
+    checked_at:parsed.data.checked_at||"",
+    confirmedEmpty:parsed.data.confirmedEmpty===true
+  };
+}
+
+function controlPrimaryTask(tasks,activity){
+  if(!Array.isArray(tasks)||!tasks.length) return null;
+  const order=activity==="blocked"
+    ?["blocked","doing","decide","wait","done"]
+    :activity==="busy"
+      ?["doing","blocked","decide","wait","done"]
+      :["doing","blocked","decide","wait","done"];
+  for(const sec of order){
+    const main=tasks.find(task=>task.main&&task.sec===sec);
+    if(main) return main;
+    const first=tasks.find(task=>task.sec===sec);
+    if(first) return first;
+  }
+  return tasks.find(task=>task.main)||tasks[0];
 }
 
 function controlTask(row){
-  const active = row?.activity_state === "busy" || row?.activity_state === "blocked";
-  if(active){
-    return {
-      title:String(row?.current_task_title || "当前任务待核验"),
-      detail:String(
-        row?.activity_state === "blocked"
-          ? (row?.last_blocker || row?.current_task_detail || "未提供阻塞说明")
-          : (row?.current_task_detail || "未提供进展说明")
-      ),
-      kind:"current"
-    };
+  const activity=String(row?.activity_state||"unknown");
+  const active=activity==="busy"||activity==="blocked";
+  const currentTitle=String(row?.current_task_title||"").trim();
+  const currentDetail=String(row?.current_task_detail||"").trim();
+  const lastTitle=String(row?.last_task_title||"").trim();
+  const lastDetail=String(row?.last_task_detail||"").trim();
+
+  const sourceDetail=active&&currentDetail?currentDetail:lastDetail;
+  const snap=controlDetailSnapshot(sourceDetail);
+  const primary=controlPrimaryTask(snap.tasks,activity);
+  const titleSource=active&&currentTitle?currentTitle:lastTitle;
+  const fallbackTitle=active?"当前任务待核验":"暂无可核验任务";
+  const title=primary&&isGenericControlTitle(titleSource)
+    ?primary.title
+    :(titleSource||primary?.title||fallbackTitle);
+
+  let detail="";
+  if(activity==="blocked"&&row?.last_blocker){
+    detail=String(row.last_blocker);
+  }else if(primary){
+    if(activity==="blocked"){
+      detail=primary.blocker||primary.next||primary.result||primary.scope||primary.status;
+    }else if(activity==="busy"){
+      detail=primary.next||primary.result||primary.scope||primary.status;
+    }else{
+      detail=primary.result||primary.next||primary.scope||primary.evidence||primary.status;
+    }
+  }else if(snap.kind==="text"){
+    detail=snap.text;
+  }else if(active&&currentDetail){
+    detail=currentDetail;
   }
+
+  if(!detail){
+    detail=activity==="blocked"?"阻塞原因尚未上报":
+      activity==="busy"?"进展说明尚未上报":
+      snap.confirmedEmpty?"本席已确认当前没有有效任务":
+      "暂无可核验的任务说明";
+  }
+
+  const secondary=(snap.tasks||[]).filter(task=>task!==primary).slice(0,2);
+  const meta=[];
+  if(snap.tasks.length) meta.push(snap.tasks.length+" 项已核验事项");
+  if(snap.checked_at) meta.push("核验 "+relativeControlTime(snap.checked_at));
   return {
-    title:String(row?.last_task_title ? "最近："+row.last_task_title : "暂无可核验任务"),
-    detail:String(row?.last_task_detail || "未提供最近任务说明"),
-    kind:"last"
+    title:compactControlText(title,140),
+    detail:compactControlText(detail,220),
+    kind:active&&currentTitle?"current":"last",
+    meta:meta.join(" · "),
+    secondary
   };
 }
 
@@ -552,53 +646,76 @@ function controlSummary(rows,seatNames){
   return {stateFresh,observerFresh,busy,blocked,unknown};
 }
 
+function freshnessChip(label,value){
+  const fresh=controlFreshness(value);
+  return '<span class="b4-fresh b4-fresh-'+esc(fresh.key)+'"><span>'+esc(label)+'</span><b>'+esc(fresh.label)+'</b></span>';
+}
+
+function controlTimeLine(row){
+  const report=relativeControlTime(row?.last_report_at);
+  const observed=relativeControlTime(row?.last_observed_at);
+  const reportExact=row?.last_report_at?formatDateTime(row.last_report_at):"未曾更新";
+  const observedExact=row?.last_observed_at?formatDateTime(row.last_observed_at):"未曾读取";
+  return '<span title="状态上报：'+esc(reportExact)+'">上报 '+esc(report)+'</span>'
+    +'<span title="最近可见：'+esc(observedExact)+'">可见 '+esc(observed)+'</span>';
+}
+
 function renderControlOverview(rows,seatNames,snapshotMeta){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
   const summary=controlSummary(rows,seatNames);
   const seats=Object.keys(seatNames||{}).length;
   const attention=summary.blocked>0||summary.unknown>0||summary.stateFresh<seats;
-  let html='<section class="b3-summary" aria-label="全院当前状态">'
-    +'<div class="b3-summary-heading"><div><span class="b3-kicker">全院态势</span><h3>六席当前投影</h3></div>'
-    +'<span class="b3-summary-fresh '+(attention?"watch":"good")+'">'+(attention?"部分状态待核验":"状态整体新鲜")+'</span></div>'
-    +'<div class="b3-metrics">'
-    +'<div class="b3-metric"><span>状态新鲜</span><strong>'+summary.stateFresh+'<small>/'+seats+'</small></strong></div>'
-    +'<div class="b3-metric"><span>观察器在线</span><strong>'+summary.observerFresh+'<small>/'+seats+'</small></strong></div>'
-    +'<div class="b3-metric doing"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
-    +'<div class="b3-metric blocked"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
-    +'<div class="b3-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
-    +'</div>'
-    +'<p class="b3-summary-note">“观察器在线”只表示最近成功读取，不表示任务事实刚发生变化。</p>'
-    +'</section>';
 
-  html+='<div class="b3-grid">';
+  let html='<section class="b4-summary" aria-label="全院当前状态">'
+    +'<div class="b4-summary-copy"><span class="b3-kicker">全院概览</span><h3>六席运行态势</h3>'
+    +'<p>状态是任务事实，最近可见只代表观察链路仍可达。</p></div>'
+    +'<div class="b4-summary-health '+(attention?"watch":"good")+'"><span>'+(attention?"需要关注":"运行平稳")+'</span><strong>'
+    +summary.stateFresh+'/'+seats+'</strong><small>状态新鲜</small></div>'
+    +'<div class="b4-metrics">'
+    +'<div class="b4-metric"><span>状态新鲜</span><strong>'+summary.stateFresh+'<small>/'+seats+'</small></strong></div>'
+    +'<div class="b4-metric"><span>最近可见</span><strong>'+summary.observerFresh+'<small>/'+seats+'</small></strong></div>'
+    +'<div class="b4-metric"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
+    +'<div class="b4-metric attention"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
+    +'<div class="b4-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
+    +'</div></section>';
+
+  html+='<div class="b4-grid">';
   for(const [id,name] of Object.entries(seatNames||{})){
     const row=byId.get(id);
-    const openBtn='<button type="button" class="b3-open-seat" data-agent="'+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">查看个人看板 <span aria-hidden="true">→</span></button>';
+    const openBtn='<button type="button" class="b3-open-seat b4-open-seat" data-agent="'+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">个人看板 <span aria-hidden="true">↗</span></button>';
     if(!row){
-      html+='<article class="b3-seat-card b3-seat-card-'+esc(id)+'">'
-        +'<div class="b3-seat-head">'+avatarHtml(id,name)
-        +'<div class="b3-seat-name"><strong>'+esc(name)+'</strong><span>'+dot("unknown")+'待核验</span></div>'
-        +'<span class="b3-fresh unknown">尚无数据</span></div>'
-        +'<div class="b3-empty-card"><strong>尚无当前投影</strong><span>不能据此判断本席是否空闲。</span></div>'
-        +'<div class="b3-seat-foot"><span>等待状态同步</span>'+openBtn+'</div></article>';
+      html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
+        +'<div class="b4-seat-head">'+avatarHtml(id,name)
+        +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot("unknown")+'待核验</span></div>'
+        +'<div class="b4-fresh-stack">'+freshnessChip("状态","never")+freshnessChip("可见","never")+'</div></div>'
+        +'<div class="b4-task"><span class="b3-eyebrow">状态说明</span><h4>尚无当前投影</h4><p>还没有取得本席可核验的状态事实。</p></div>'
+        +'<div class="b4-seat-foot"><div class="b4-times"><span>等待首次同步</span></div>'+openBtn+'</div></article>';
       continue;
     }
+
     const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
     const task=controlTask(row);
-    const sf=controlFreshness(row.freshness),of=controlFreshness(row.observer_freshness);
-    html+='<article class="b3-seat-card b3-seat-card-'+esc(id)+'">'
-      +'<div class="b3-seat-head">'+avatarHtml(id,name)
-      +'<div class="b3-seat-name"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+'</span></div>'
-      +'<span class="b3-fresh '+esc(sf.key)+'">状态'+esc(sf.label)+'</span></div>'
-      +'<div class="b3-main-task"><span class="b3-eyebrow">'+(task.kind==="current"?"当前任务":"最近任务")+'</span>'
-      +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p></div>'
-      +'<div class="b3-parallel quiet"><span>观察器 '+esc(of.label)+' · '+esc(controlMode(row))+'</span></div>'
-      +'<div class="b3-seat-foot"><span>状态 '+esc(formatDateTime(row.last_report_at))
-      +' · 读取 '+esc(formatDateTime(row.last_observed_at))+'</span>'+openBtn+'</div></article>';
+    const secondary=task.secondary.length
+      ?'<ul class="b4-related">'+task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(compactControlText(item.title,90))+'</span></li>').join("")+'</ul>'
+      :"";
+    const legacy=row.refresh_mode==="legacy_passive"
+      ?'<span class="b4-mode b4-mode-passive">被动</span>'
+      :'<span class="b4-mode">只读</span>';
+
+    html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
+      +'<div class="b4-seat-head">'+avatarHtml(id,name)
+      +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+' '+legacy+'</span></div>'
+      +'<div class="b4-fresh-stack">'+freshnessChip("状态",row.freshness)+freshnessChip("可见",row.observer_freshness)+'</div></div>'
+      +'<div class="b4-task"><span class="b3-eyebrow">'+(task.kind==="current"?"当前任务":"最近事项")+'</span>'
+      +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p>'
+      +(task.meta?'<div class="b4-task-meta">'+esc(task.meta)+'</div>':'')+'</div>'
+      +secondary
+      +'<div class="b4-seat-foot"><div class="b4-times">'+controlTimeLine(row)+'</div>'+openBtn+'</div></article>';
   }
   html+='</div>';
+
   if(snapshotMeta){
-    html+='<p class="b3-caption">'+esc(snapshotMeta)+' · 当前投影不替代 Goal、PR、Review、CI 与设备验收证据。</p>';
+    html+='<p class="b3-caption b4-caption">'+esc(snapshotMeta)+' · 正式交付仍以 Goal、PR、Review、CI 与设备验收证据为准。</p>';
   }
   return html;
 }
@@ -612,35 +729,44 @@ function renderControlPersonal(id,name,row,snapshotReadAt){
   const sf=controlFreshness(row.freshness),of=controlFreshness(row.observer_freshness);
   const progress=Number.isInteger(row.current_progress)&&row.current_progress>=0&&row.current_progress<=100
     ?row.current_progress:null;
-  const hero='<section class="b3-personal-hero">'
+  const reportRelative=relativeControlTime(row.last_report_at);
+  const observedRelative=relativeControlTime(row.last_observed_at);
+  const hero='<section class="b3-personal-hero b4-personal-hero">'
     +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div>'
-    +'<span class="b3-kicker">个人态势</span><h3>'+esc(name)+' · 当前状态</h3>'
-    +'<p>'+dot(activity.sec)+esc(activity.label)+' · 状态'+esc(sf.label)+' · 观察器'+esc(of.label)+'</p></div></div>'
+    +'<span class="b3-kicker">席位详情</span><h3>'+esc(name)+' · '+esc(activity.label)+'</h3>'
+    +'<p>'+dot(activity.sec)+'状态'+esc(sf.label)+' · 可见'+esc(of.label)+' · '+esc(controlMode(row))+'</p></div></div>'
     +'<div class="b3-personal-metrics">'
     +'<div><span>状态</span><strong>'+esc(activity.label)+'</strong></div>'
     +'<div><span>进度</span><strong>'+(progress==null?"—":esc(progress+"%"))+'</strong></div>'
-    +'<div><span>revision</span><strong>'+esc(row.revision==null?"—":row.revision)+'</strong></div>'
-    +'<div><span>模式</span><strong>'+esc(row.refresh_mode==="legacy_passive"?"被动":"主动")+'</strong></div>'
+    +'<div><span>上报</span><strong class="b4-time-value">'+esc(reportRelative)+'</strong></div>'
+    +'<div><span>可见</span><strong class="b4-time-value">'+esc(observedRelative)+'</strong></div>'
     +'</div>'
     +'<p class="b3-personal-source">状态时间：'+esc(formatDateTime(row.last_report_at))
     +' · 观察时间：'+esc(formatDateTime(row.last_observed_at))
     +(snapshotReadAt?' · 页面读取：'+esc(formatDateTime(new Date(snapshotReadAt).toISOString())):'')
-    +'</p></section>';
+    +' · revision '+esc(row.revision==null?"—":row.revision)+'</p></section>';
 
-  const body='<article class="b3-task-card"><div class="b3-task-head"><div>'
+  const related=task.secondary.length
+    ?'<div class="b4-personal-related"><span>同批事项</span><ul>'
+      +task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(compactControlText(item.title,120))+'</span></li>').join("")
+      +'</ul></div>'
+    :"";
+
+  const body='<article class="b3-task-card b4-personal-task"><div class="b3-task-head"><div>'
     +'<span class="b3-task-id">'+esc(task.kind==="current"?"CURRENT":"LAST")+'</span>'
     +'<h4>'+esc(task.title)+'</h4></div>'
     +'<div class="b3-task-state"><span class="b3-pill '+(activity.sec==="blocked"?"b3-p-blocked":activity.sec==="doing"?"b3-p-doing":"b3-p-wait")+'">'
     +esc(activity.label)+'</span></div></div>'
     +'<div class="b3-keyfacts">'
-    +'<div class="b3-keyfact result"><span>状态说明</span><p>'+esc(task.detail)+'</p></div>'
-    +(row.last_blocker?'<div class="b3-keyfact blocked"><span>阻塞原因</span><p>'+esc(row.last_blocker)+'</p></div>':'')
+    +'<div class="b3-keyfact result"><span>状态摘要</span><p>'+esc(task.detail)+'</p></div>'
+    +(task.meta?'<div class="b3-keyfact evidence"><span>核验信息</span><p>'+esc(task.meta)+'</p></div>':'')
+    +(row.last_blocker?'<div class="b3-keyfact blocked"><span>阻塞原因</span><p>'+esc(compactControlText(row.last_blocker,500))+'</p></div>':'')
     +'<div class="b3-keyfact evidence"><span>状态来源</span><p>'+esc(controlMode(row))
     +(row.report_source?' · '+esc(row.report_source):'')+'</p></div>'
-    +'</div></article>';
+    +'</div>'+related+'</article>';
 
   return hero+body
-    +'<p class="b3-caption">这是当前状态投影，不是个人完整任务清单；正式工程交付仍以 GitHub/CI 等证据为准。</p>';
+    +'<p class="b3-caption">这是当前状态投影，不是完整任务历史；正式工程交付仍以 GitHub/CI 等证据为准。</p>';
 }
 
 return {
