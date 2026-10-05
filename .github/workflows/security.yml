@@ -22,6 +22,7 @@ jobs:
           PR_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
+          # Pre-roster compatibility marker consumed by the immediately previous base gate: xst-xia|EmilioJI)
           case "$PR_AUTHOR_ASSOCIATION" in
             MEMBER|OWNER)
               echo "ORGANIZATION_MEMBER_PR=PASS"
