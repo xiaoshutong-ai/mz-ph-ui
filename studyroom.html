@@ -141,10 +141,10 @@
   </div>
   <div class="sr-board-actions">
     <span id="srAgentState" class="sr-board-sync" role="status" aria-live="polite">等待首次读取</span>
-    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">重新读取</button>
+    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">刷新状态</button>
   </div>
 </section>
-<p id="srAgentMeta" class="sr-board-note">当前看板展示成员最新上报，最终交付仍以任务、代码审查与测试证据为准。</p>
+<p id="srAgentMeta" class="sr-board-note">当前看板展示六席状态投影；观察器在线不等于任务事实刚更新，最终交付仍以 Goal、PR、Review、CI 与设备验收为准。</p>
 <div id="srAgentOverview" class="sr-board-overview"></div>
 
 <section id="srAgentPersonal" class="sr-board-personal hidden" aria-labelledby="srAgentPersonalTitle">
@@ -505,34 +505,54 @@ async function resetStudyroomCharacter(cid){
 
 // 六席实时看板：直接留在水墨书院，复用 board-consumer.js 与 agent_status。
 const SR_AGENT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
+const SR_AGENT_CONTROL_PATH="/functions/v1/studyroom-agent-control";
+const SR_AGENT_FOLLOWUP_MS=2000;
+const SR_AGENT_FOLLOWUP_LIMIT=6;
 let _srAgentRows=[],_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
+let _srAgentFollowupTimer=null,_srAgentFollowupRemaining=0,_srAgentFollowupRequestedAt=0,_srAgentFollowupAgents=[];
 
-function validateSrAgentRows(value){
-  if(!Array.isArray(value)) throw new Error("状态数据格式错误");
-  const seen=new Set(),allowed=new Set(Object.keys(SR_AGENT_NAMES));
-  return value.map(row=>{
-    if(!row||typeof row!=="object"||Array.isArray(row)||!allowed.has(row.id)||seen.has(row.id))
-      throw new Error("状态数据未核验");
-    seen.add(row.id);
-    for(const key of ["status","task_name","task_detail","updated_at"]){
-      if(row[key]!=null&&typeof row[key]!=="string") throw new Error("状态字段未核验");
-    }
-    return {
-      id:row.id,
-      status:row.status||"",
-      task_name:row.task_name||"",
-      task_detail:row.task_detail||"",
-      updated_at:row.updated_at||""
-    };
+async function agentControlApi(action){
+  const token=await getToken();
+  if(!token) throw new Error("未登录");
+  const r=await fetch(SB_URL+SR_AGENT_CONTROL_PATH,{
+    method:"POST",
+    headers:{
+      "apikey":SB_ANON,
+      "Authorization":"Bearer "+token,
+      "Content-Type":"application/json",
+      "Accept":"application/json"
+    },
+    body:JSON.stringify({action})
   });
+  const raw=await r.text();
+  let value=null;
+  try{value=raw?JSON.parse(raw):null;}catch(_e){}
+  if(!r.ok||value?.ok!==true){
+    const code=String(value?.error||"");
+    const error=new Error(
+      code==="MFA_REQUIRED"?"需要完成 MFA 二次验证后读取状态":
+      code==="ACCESS_DENIED"?"没有小书童状态读取权限":
+      code==="AUTH_REQUIRED"?"登录已失效":
+      code||("HTTP "+r.status)
+    );
+    error.status=r.status;
+    error.code=code;
+    throw error;
+  }
+  return value;
 }
 
+function srFreshLabel(value){
+  return value==="fresh"?"新鲜":value==="stale"?"陈旧":"未曾更新";
+}
+function srAgentMode(row){
+  if(row?.refresh_mode==="legacy_passive") return "被动同步";
+  return row?.adapter_type==="muse"?"只读观察":"按需刷新";
+}
 function srAgentStateText(row){
-  if(!row) return "暂不可用 · 尚未取得本席当前上报";
-  const parsed=BoardConsumer.parseTaskDetail(row.task_detail);
-  if(parsed.kind==="invalid") return "暂不可用 · 本次上报格式异常";
-  const stamp=Date.parse(row.updated_at),stale=!Number.isFinite(stamp)||stamp>Date.now()||Date.now()-stamp>=3600000;
-  return stale ? "当前上报 · 数据已过期，请重新读取" : "当前上报 · 数据有效";
+  if(!row) return "暂不可用 · 尚未取得本席当前状态";
+  const activity={busy:"工作中",idle:"空闲",blocked:"受阻",unavailable:"不可用",unknown:"待核验"}[row.activity_state]||"待核验";
+  return activity+" · 状态"+srFreshLabel(row.freshness)+" · 观察器"+srFreshLabel(row.observer_freshness)+" · "+srAgentMode(row);
 }
 
 function syncSrAgentSelection(){
@@ -549,14 +569,77 @@ function renderSrAgentPersonal(id){
   const row=_srAgentRows.find(item=>item.id===id)||null;
   document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人看板";
   document.getElementById("srAgentPersonalState").textContent=srAgentStateText(row);
-  document.getElementById("srAgentPersonalMeta").textContent="本次读取："+(_srAgentReadAt?new Date(_srAgentReadAt).toLocaleString("zh-CN",{hour12:false}):"时间待核验");
-  document.getElementById("srAgentPersonalContent").innerHTML=BoardConsumer.renderPersonal(
+  document.getElementById("srAgentPersonalMeta").textContent=row
+    ?("状态时间："+(row.last_report_at?new Date(row.last_report_at).toLocaleString("zh-CN",{hour12:false}):"未曾更新")
+      +" · 观察时间："+(row.last_observed_at?new Date(row.last_observed_at).toLocaleString("zh-CN",{hour12:false}):"未曾读取")
+      +" · revision "+row.revision)
+    :"本席尚无可核验状态。";
+  document.getElementById("srAgentPersonalContent").innerHTML=BoardConsumer.renderControlPersonal(
     id,SR_AGENT_NAMES[id]||id,row,_srAgentReadAt
   );
   const panel=document.getElementById("srAgentPersonal");
   panel.classList.remove("hidden");
   syncSrAgentSelection();
   try{panel.scrollIntoView({block:"start"});}catch(_e){}
+}
+
+function applySrAgentRows(value){
+  const rows=BoardConsumer.validateControlRows(value,SR_AGENT_NAMES);
+  _srAgentRows=rows;
+  _srAgentReadAt=Date.now();
+  document.getElementById("srAgentOverview").innerHTML=BoardConsumer.renderControlOverview(
+    rows,SR_AGENT_NAMES,"水墨书院 · 六席当前状态投影"
+  );
+  document.getElementById("srAgentMeta").textContent=
+    "数据口径：状态新鲜度基于最近新事实，观察器新鲜度仅表示最近成功读取；当前投影不替代 Goal、PR、Review、CI 与设备验收证据。";
+  if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
+  else syncSrAgentSelection();
+  return rows;
+}
+
+function clearSrAgentFollowup(){
+  if(_srAgentFollowupTimer){
+    clearInterval(_srAgentFollowupTimer);
+    _srAgentFollowupTimer=null;
+  }
+  _srAgentFollowupRemaining=0;
+  _srAgentFollowupRequestedAt=0;
+  _srAgentFollowupAgents=[];
+}
+function srAgentFollowupSatisfied(rows){
+  if(!_srAgentFollowupRequestedAt||!_srAgentFollowupAgents.length) return false;
+  const byId=new Map(rows.map(row=>[row.id,row]));
+  return _srAgentFollowupAgents.every(id=>{
+    const t=Date.parse(byId.get(id)?.last_observed_at||"");
+    return Number.isFinite(t)&&t>=_srAgentFollowupRequestedAt;
+  });
+}
+function maybeFinishSrAgentFollowup(rows){
+  if(!_srAgentFollowupTimer||!srAgentFollowupSatisfied(rows)) return false;
+  clearSrAgentFollowup();
+  return true;
+}
+function startSrAgentFollowup(refresh,rows){
+  clearSrAgentFollowup();
+  const requested=Date.parse(refresh?.requested_at||"");
+  const active=Array.isArray(refresh?.active_agents)
+    ?refresh.active_agents.map(v=>String(v||"")).filter(id=>Object.hasOwn(SR_AGENT_NAMES,id)&&id!=="xia")
+    :[];
+  if(!Number.isFinite(requested)||!active.length||srAgentFollowupSatisfied(rows)) return;
+  _srAgentFollowupRequestedAt=requested;
+  _srAgentFollowupAgents=[...new Set(active)];
+  _srAgentFollowupRemaining=SR_AGENT_FOLLOWUP_LIMIT;
+  _srAgentFollowupTimer=setInterval(()=>{
+    const section=document.getElementById("srAgents");
+    if(document.hidden||!section||!section.classList.contains("active")){
+      clearSrAgentFollowup();
+      return;
+    }
+    if(_srAgentsLoading) return;
+    _srAgentFollowupRemaining--;
+    loadAgents().catch(()=>{});
+    if(_srAgentFollowupRemaining<=0) clearSrAgentFollowup();
+  },SR_AGENT_FOLLOWUP_MS);
 }
 
 async function loadAgents(){
@@ -567,25 +650,50 @@ async function loadAgents(){
   if(btn) btn.disabled=true;
   if(pbtn) pbtn.disabled=true;
   try{
-    const value=await api("/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id");
-    const rows=validateSrAgentRows(value);
-    _srAgentRows=rows;
-    _srAgentReadAt=Date.now();
-    document.getElementById("srAgentOverview").innerHTML=BoardConsumer.renderOverview(
-      rows,SR_AGENT_NAMES,"水墨书院 · 当前六席上报",_srAgentReadAt
-    );
-    document.getElementById("srAgentMeta").textContent=
-      "数据口径：仅展示成员当前上报；最终交付仍以任务、代码审查与测试证据为准。";
-    document.getElementById("srAgentState").textContent="已同步 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
-    if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
-    else syncSrAgentSelection();
+    const value=await agentControlApi("state");
+    const rows=applySrAgentRows(value.agents);
+    if(maybeFinishSrAgentFollowup(rows)){
+      document.getElementById("srAgentState").textContent=
+        "状态刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+    }else{
+      document.getElementById("srAgentState").textContent=
+        "已读取 "+rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+    }
   }catch(e){
     _srAgentRows=[];
     _srAgentReadAt=0;
     document.getElementById("srAgentOverview").innerHTML="";
     document.getElementById("srAgentMeta").textContent="当前无法读取六席状态，请稍后重试。";
-    document.getElementById("srAgentState").textContent="读取失败";
+    document.getElementById("srAgentState").textContent="读取失败 · "+(e.message||e);
     document.getElementById("srAgentPersonal").classList.add("hidden");
+    clearSrAgentFollowup();
+  }finally{
+    _srAgentsLoading=false;
+    if(btn) btn.disabled=false;
+    if(pbtn) pbtn.disabled=false;
+  }
+}
+
+async function refreshAgents(){
+  if(_srAgentsLoading) return;
+  _srAgentsLoading=true;
+  const btn=document.getElementById("srAgentRefresh");
+  const pbtn=document.getElementById("srAgentPersonalRefresh");
+  if(btn) btn.disabled=true;
+  if(pbtn) pbtn.disabled=true;
+  try{
+    const value=await agentControlApi("refresh");
+    const rows=applySrAgentRows(value.agents);
+    const active=Array.isArray(value.refresh?.active_agents)?value.refresh.active_agents.length:0;
+    const passive=Array.isArray(value.refresh?.passive_agents)?value.refresh.passive_agents.join("、"):"";
+    document.getElementById("srAgentState").textContent=
+      "已发起 "+active+" 席只读状态观察"
+      +(passive?"；"+passive+" 保持被动同步":"")
+      +" · 不会向 Muse 主/旁聊天写消息";
+    startSrAgentFollowup(value.refresh,rows);
+  }catch(e){
+    document.getElementById("srAgentState").textContent="刷新失败 · "+(e.message||e);
+    clearSrAgentFollowup();
   }finally{
     _srAgentsLoading=false;
     if(btn) btn.disabled=false;
@@ -597,7 +705,7 @@ document.getElementById("srAgentOverview").addEventListener("click",event=>{
   const button=event.target&&event.target.closest?event.target.closest("[data-agent]"):null;
   if(button&&button.dataset.agent) renderSrAgentPersonal(button.dataset.agent);
 });
-document.getElementById("srAgentRefresh").addEventListener("click",()=>loadAgents());
+document.getElementById("srAgentRefresh").addEventListener("click",()=>refreshAgents());
 document.getElementById("srAgentPersonalRefresh").addEventListener("click",()=>loadAgents());
 document.getElementById("srAgentPersonalClose").addEventListener("click",()=>{
   _srAgentSelected="";
@@ -612,7 +720,13 @@ function ensureSrAgentTimer(){
   },3600000);
 }
 
-function refreshAll(){ loadOverview(); loadDevices(); loadPresetCodes(); loadAgents(); ensureSrAgentTimer(); }
+function refreshAll(){
+  loadOverview();
+  loadDevices();
+  loadPresetCodes();
+  loadAgents();
+  ensureSrAgentTimer();
+}
 
 (function(){
   getToken().then(t=>{

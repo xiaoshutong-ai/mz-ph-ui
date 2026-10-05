@@ -895,472 +895,86 @@ jobs:
           assert.ok(escaped.includes('&lt;img'),'escaped task title missing');
           console.log('BOARD_CHINESE_RENDER=PASS');
           NODE
-      - name: Verify hourly and manual team-board refresh
+      - name: Verify bounded agent-control v2 board contracts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        # Execute only trusted main source. The fake clock/DOM is not a sandbox.
-        # PR events retain the existing static security and syntax gates.
-        run: |
-          node <<'NODE'
-          async function runBoardRefreshTests(app, workspace, style, workflow) {
-            const results=[];
-            const assert=(value,message)=>{if(!value)throw new Error(message);};
-            const equal=(actual,expected,message)=>assert(actual===expected,message+": expected "+expected+", got "+actual);
-            const test=async(name,callback)=>{try{await callback();results.push({name,status:"PASS"});}catch(error){results.push({name,status:"FAIL",message:error.message});}};
-            const start=app.indexOf("/* 六席状态：只读现有接口，沿用运维登录 */");
-            const end=app.indexOf("async function loadSecuritySettings()",start);
-            const enterStart=app.indexOf("async function enterOperationsHub(){");
-            const enterEnd=app.indexOf("async function bootstrapAuthenticatedSession()",enterStart);
-            assert(start>=0&&end>start&&enterStart>=0&&enterEnd>enterStart,"Actual production source boundaries missing");
-            const boardSource=app.slice(start,end);
-            function harness(){
-              let now=1800000000000,timerId=0;
-              const timers=new Map(),requests=[],queue=[],nodes=new Map();
-              const node=id=>{
-                if(!nodes.has(id)){
-                  const classes=new Set(id==="agentPersonalBoard"?["hidden"]:[]);
-                  nodes.set(id,{innerHTML:"",textContent:"",disabled:false,checked:false,
-                    classList:{contains:value=>classes.has(value),add:value=>classes.add(value),remove:value=>classes.delete(value)}});
-                }
-                return nodes.get(id);
-              };
-              const document={hidden:false};
-              class FakeDate extends Date{constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
-              const authApi=async(path,method)=>{requests.push({path,method});return queue.length?await queue.shift()():[];};
-              const create=new Function("$","document","Date","authApi","setInterval","clearInterval","location",[
-                'let token="test-session",selectedProjectKey="xiaoshutong",operationsProjectGeneration=0;const opsAuthStatus=null;',
-                'function setAuthStage(stage){if(stage==="console")$("console").classList.remove("hidden");}',
-                'async function loadSecuritySettings(){}async function applyProjectSelection(){}',
-                boardSource,app.slice(enterStart,enterEnd),
-                'return {read:loadAgentStatusOps,enter:enterOperationsHub,ensure:agentOpsEnsureTimers,visibility:agentOpsOnVisibilityChange,clear:clearAgentStatusOps,setToken:value=>{token=value;}};'
-              ].join("\n"));
-              const api=create(node,document,FakeDate,authApi,
-                (callback,ms)=>{const id=++timerId;timers.set(id,{callback,ms,nextAt:now+ms});return id;},
-                id=>timers.delete(id),{search:""});
-              const flush=async()=>{for(let n=0;n<12;n++)await Promise.resolve();};
-              return {api,node,document,timers,requests,queue,flush,advance:ms=>{now+=ms;},
-                tick:async()=>{for(const timer of [...timers.values()])timer.callback();await flush();},
-                hide:()=>{document.hidden=true;api.visibility();},
-                show:async()=>{document.hidden=false;api.visibility();await flush();},
-                elapse:async ms=>{
-                  const target=now+ms;let iterations=0;
-                  while(true){
-                    const entry=[...timers.entries()].filter(([,timer])=>timer.nextAt<=target).sort((a,b)=>a[1].nextAt-b[1].nextAt)[0];
-                    if(!entry)break;
-                    assert(++iterations<10000,"Fake-clock runaway timer");
-                    const [id,timer]=entry;now=timer.nextAt;timer.nextAt+=timer.ms;
-                    if(timers.has(id))timer.callback();
-                    await flush();
-                  }
-                  now=target;await flush();
-                }};
-
-            }
-            await test("runtime regression step is main-push-only",async()=>{
-              const name="      - name: Verify hourly and manual team-board refresh";
-              const offset=workflow.indexOf(name);
-              assert(offset>=0,"Regression step missing");
-              const step=workflow.slice(offset).split("\n      - name: ")[0];
-              const runOffset=step.indexOf("\n        run: |");
-              assert(runOffset>=0,"Runtime test step run block missing");
-              const headerLines=step.slice(0,runOffset).split("\n");
-              assert(headerLines.some(line=>line==="        if: github.event_name == 'push' && github.ref == 'refs/heads/main'"),
-                "Runtime tests must not execute pull_request_target source");
-            });
-            await test("registered fallback uses one 60-second deadline check",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();
-              equal(h.timers.size,1,"Registered timer count");
-              equal([...h.timers.values()][0].ms,60000,"Fallback check interval");
-            });
-            await test("scheduled clock actually reaches each hourly deadline",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();
-              await h.elapse(3599999);equal(h.requests.length,1,"Scheduled read before hour");
-              await h.elapse(1);equal(h.requests.length,2,"Scheduled read at hour");
-              await h.elapse(3599999);equal(h.requests.length,2,"Scheduled second read before hour");
-              await h.elapse(1);equal(h.requests.length,3,"Scheduled second hourly read");
-            });
-            await test("scheduled hidden hours stay quiet and return reads once",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();h.hide();
-              await h.elapse(7200000);equal(h.requests.length,1,"Scheduled hidden reads");
-              await h.show();equal(h.requests.length,2,"Scheduled return read");
-              await h.elapse(3599999);equal(h.requests.length,2,"Scheduled fresh return interval");
-              await h.elapse(1);equal(h.requests.length,3,"Scheduled next visible hour");
-            });
-            await test("30-second UI and scheduling are absent",async()=>{
-              assert(!workspace.includes("agentStatusOpsTrack30s"),"Temporary tracking checkbox remains");
-              assert(!/agentOpsTrack30s|agentOpsTrackTimer|AGENT_OPS_TRACK_MS/.test(app),"Temporary tracking scheduling remains");
-              assert(!style.includes(".track-toggle"),"Temporary tracking CSS remains");
-            });
-            await test("login reads once without an immediate fallback reread",async()=>{
-              const h=harness();await h.api.enter();await h.flush();equal(h.requests.length,1,"Login reads");
-              await h.tick();equal(h.requests.length,1,"Immediate fallback reads");
-            });
-            await test("hourly fallback waits a full hour since success",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();
-              h.advance(3599999);await h.tick();equal(h.requests.length,1,"Before hour");
-              h.advance(1);await h.tick();equal(h.requests.length,2,"At hour");
-              await h.tick();equal(h.requests.length,2,"Duplicate fresh fallback");
-            });
-            await test("manual refresh reads a fresh snapshot on demand",async()=>{
-              const h=harness();await h.api.read();await h.api.read();equal(h.requests.length,2,"Manual requests");
-              assert(app.includes('$("agentStatusOpsRefresh")?.addEventListener("click",()=>{loadAgentStatusOps().catch(()=>{});});'),"Manual refresh handler missing");
-            });
-            await test("repeated fresh visibility returns do not request",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();
-              for(let n=0;n<4;n++){h.hide();await h.show();}equal(h.requests.length,1,"Fresh visibility returns");
-            });
-            await test("hidden page owns no timers and cannot read",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();h.hide();equal(h.timers.size,0,"Hidden timers");
-              h.advance(3600000);await h.api.read();await h.tick();equal(h.requests.length,1,"Hidden requests");
-            });
-            await test("return after an hour reads once and starts one timer",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();h.hide();h.advance(3600000);await h.show();
-              equal(h.requests.length,2,"Due return");equal(h.timers.size,1,"Fallback timers");
-              await h.tick();equal(h.requests.length,2,"Fresh fallback after return");
-            });
-            await test("hidden in-flight completion preserves one pending read",async()=>{
-              const h=harness();let resolve;h.queue.push(()=>new Promise(done=>{resolve=done;}));
-              const first=h.api.read();h.hide();resolve([]);await first;equal(h.requests.length,1,"Hidden completion");
-              await h.show();equal(h.requests.length,2,"Pending read");await h.tick();equal(h.requests.length,2,"Duplicate pending read");
-            });
-            await test("return during in-flight read waits then reads once",async()=>{
-              const h=harness();let resolve;h.queue.push(()=>new Promise(done=>{resolve=done;}));
-              const first=h.api.read();h.hide();await h.show();equal(h.requests.length,1,"Concurrent return");
-              resolve([]);await first;await h.flush();equal(h.requests.length,2,"Pending after completion");
-            });
-            await test("manual clicks cannot overlap in-flight requests",async()=>{
-              const h=harness();let resolve;h.queue.push(()=>new Promise(done=>{resolve=done;}));
-              const first=h.api.read();await h.api.read();await h.api.read();equal(h.requests.length,1,"Overlapping reads");
-              resolve([]);await first;equal(h.node("agentStatusOpsRefresh").disabled,false,"Button release");
-            });
-            await test("failure backoff remains and success resets it",async()=>{
-              const h=harness();h.queue.push(()=>{throw new Error("offline");});await h.api.read();await h.api.read();
-              equal(h.requests.length,1,"Immediate retry");h.advance(59999);await h.api.read();equal(h.requests.length,1,"Early retry");
-              h.advance(1);await h.api.read();equal(h.requests.length,2,"Allowed retry");await h.api.read();equal(h.requests.length,3,"Read after success");
-            });
-            await test("due read survives backoff across visibility returns",async()=>{
-              const h=harness();await h.api.read();h.hide();h.advance(3600000);
-              h.queue.push(()=>{throw new Error("offline");});await h.show();equal(h.requests.length,2,"Due failed read");
-              h.hide();await h.show();equal(h.requests.length,2,"Backoff return");
-              h.advance(60000);await h.tick();equal(h.requests.length,3,"Retry after backoff");
-            });
-            await test("logged-out state clears details without requests",async()=>{
-              const h=harness();h.node("agentStatusOpsList").innerHTML="previous";
-              h.node("agentPersonalBoard").classList.remove("hidden");h.node("agentPersonalTitle").textContent="previous";
-              h.api.setToken("");await h.api.read();equal(h.requests.length,0,"Logged-out reads");
-              equal(h.node("agentStatusOpsList").innerHTML,"","Rows");assert(h.node("agentPersonalBoard").classList.contains("hidden"),"Panel not cleared");
-              equal(h.node("agentPersonalTitle").textContent,"个人看板","Title");
-            });
-            for(const status of [401,403])await test(status+" clears rows and personal details",async()=>{
-              const h=harness();h.node("agentStatusOpsList").innerHTML="previous";h.node("agentPersonalBoard").classList.remove("hidden");
-              h.queue.push(()=>{const error=new Error("denied");error.status=status;throw error;});await h.api.read();
-              equal(h.node("agentStatusOpsList").innerHTML,"","Denied rows");assert(h.node("agentPersonalBoard").classList.contains("hidden"),"Denied panel not cleared");
-            });
-            await test("old-session response and finally cannot overwrite new session",async()=>{
-              const h=harness();let oldResolve,newResolve;
-              h.queue.push(()=>new Promise(done=>{oldResolve=done;}));const oldRead=h.api.read();h.api.clear();h.api.setToken("new");
-              h.queue.push(()=>new Promise(done=>{newResolve=done;}));const newRead=h.api.read();
-              oldResolve([{id:"bi",task_name:"OLD"}]);await oldRead;
-              equal(h.node("agentStatusOpsRefresh").disabled,true,"New loading state");assert(!h.node("agentStatusOpsList").innerHTML.includes("OLD"),"Old response rendered");
-              newResolve([{id:"bi",task_name:"NEW"}]);await newRead;assert(h.node("agentStatusOpsList").innerHTML.includes("NEW"),"New response missing");
-            });
-            await test("network failure keeps clearly marked stale data",async()=>{
-              const h=harness();h.node("agentStatusOpsList").innerHTML="previous";h.queue.push(()=>{throw new Error("offline");});await h.api.read();
-              equal(h.node("agentStatusOpsList").innerHTML,"previous","Retained rows");assert(h.node("agentStatusOpsState").textContent.includes("当前状态未核验"),"Stale warning missing");
-            });
-            await test("server text escaping and six fixed seats remain",async()=>{
-              const h=harness();h.queue.push(()=>[{id:"bi",status:"constructor",task_name:'<img src=x onerror="x">',task_detail:"<script>x</script>",updated_at:"invalid"}]);
-              await h.api.read();const html=h.node("agentStatusOpsList").innerHTML;
-              assert(!html.includes("<img")&&!html.includes("<script"),"Unescaped remote text");
-              equal((html.match(/class="agent-seat"/g)||[]).length,6,"Fixed seats");assert(html.includes("时间未核验")&&html.includes("未知"),"Unknown evidence labels missing");
-              assert(h.requests.every(request=>request.method==="GET"),"Board must remain read-only");
-            });
-            await test("clear removes timers and allows a new initial read",async()=>{
-              const h=harness();await h.api.read();h.api.ensure();h.api.clear();equal(h.timers.size,0,"Timers after clear");
-              await h.api.enter();await h.flush();equal(h.requests.length,2,"New-session read");
-            });
-            await test("studyroom navigation and shared API expiry cleanup remain",async()=>{
-              assert(app.includes('window.location.href="./studyroom.html"'),"Studyroom navigation missing");
-              assert(!workspace.includes('id="studyroomProject"'),"Old studyroom card restored");
-              const apiStart=app.indexOf("async function api("),apiEnd=app.indexOf("/* 六席状态",apiStart);
-              assert(apiStart>=0&&app.slice(apiStart,apiEnd).includes("clearAgentStatusOps();"),"Shared API expiry cleanup missing");
-              assert(style.includes(".agent-table-wrap{max-width:100%;overflow-x:auto}"),"Narrow table scrolling missing");
-            });
-            return results;
-          }
-
-          const {readFileSync}=require("node:fs");
-          runBoardRefreshTests(
-            readFileSync("app.js","utf8"),
-            readFileSync("workspace.html","utf8"),
-            readFileSync("style.css","utf8"),
-            readFileSync(".github/workflows/security.yml","utf8")
-          ).then(results=>{
-            for(const result of results)console.log(result.status+" "+result.name+(result.message?": "+result.message:""));
-            const failed=results.filter(result=>result.status==="FAIL");
-            console.log("TEAM_BOARD_REFRESH: "+(results.length-failed.length)+" passed, "+failed.length+" failed");
-            if(failed.length)process.exitCode=1;
-          }).catch(error=>{console.error(error);process.exitCode=1;});
-          NODE
-      - name: Verify team-board project and session boundaries
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        # Only trusted main executes production source in a fixture.
+        # Only trusted main executes production source. pull_request_target remains static-only.
+        shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/team-board-boundaries.cjs <<'NODE'
-          const fs=require('node:fs'),path=require('node:path'),test=require('node:test'),assert=require('node:assert/strict'),crypto=require('node:crypto');
-          const root=process.env.BOARD_TEST_ROOT||'.';
-          const app=fs.readFileSync(path.join(root,'app.js'),'utf8');
-          function section(start,end){const a=app.indexOf(start),b=app.indexOf(end,a);assert.ok(a>=0&&b>a,'Production boundaries present: '+start);return app.slice(a,b);}
-          const session=section('let operationsSessionGeneration=','function qrDataUri(');
-          const shared=section('async function api(','async function prepareMfa(');
-          const board=section('/* 六席状态','async function loadSecuritySettings()');
-          const project=section('async function applyProjectSelection(){','async function enterOperationsHub(){');
-          const row=[{id:'bi',status:'idle',task_name:'FIXTURE_PROJECT_A',task_detail:'FIXTURE_ONLY',updated_at:'2026-10-04T00:00:00Z'}];
-          function harness(){
-            const nodes=new Map(),queue=[],requests=[],timers=new Map();let timerId=0;
-            const node=id=>{if(!nodes.has(id)){const classes=new Set(id==='agentPersonalBoard'?['hidden']:[]);nodes.set(id,{innerHTML:'',textContent:'',disabled:false,value:'',classList:{contains:x=>classes.has(x),add:x=>classes.add(x),remove:x=>classes.delete(x),toggle:(x,v)=>{if(v)classes.add(x);else classes.delete(x);}}});}return nodes.get(id);};
-            const storage=new Map();
-            const sessionStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
-            const document={hidden:false,body:node("body")};
-            const fetch=async(url,options)=>{requests.push({url,method:options.method});return queue.length?await queue.shift()():response(200,[]);};
-            const create=new Function('$','document','fetch','sessionStorage','setInterval','clearInterval',[
-              'let token="FAKE_SESSION",operationsRefreshPromise=null,selectedProjectKey="xiaoshutong",operationsProjectGeneration=0;',
-              'const BASE="https://fixture.invalid",PUB="fixture-public",FN=BASE+"/functions/fixture";',
-              'const OPS_REFRESH_STORAGE_KEY="mz_ops_refresh_token",OPS_SESSION_STARTED_STORAGE_KEY="mz_ops_session_started_at",OPS_SESSION_MAX_AGE_MS=28800000;',
-              'const opsMemberships=[{project_key:"xiaoshutong"},{project_key:"mengzheng"},{project_key:"dev-steward"}];let stewardDashboardDays=30;',
-              "const window={location:{}};function setAuthStage(stage){\n  const login=stage===\"login\";\n  const passwordSetup=stage===\"password_setup\";\n  const mfa=stage===\"mfa\";\n  const consoleOpen=stage===\"console\";\n  if(!consoleOpen)document.body.classList.remove(\"steward-focus-mode\");\n  $(\"workspaceHero\")?.classList.toggle(\"hidden\",!(login||passwordSetup));\n  $(\"login\").classList.toggle(\"hidden\",!login);\n  $(\"passwordSetup\").classList.toggle(\"hidden\",!passwordSetup);\n  $(\"mfa\").classList.toggle(\"hidden\",!mfa);\n  $(\"console\").classList.toggle(\"hidden\",!consoleOpen);\n}\n\n",
-              'function membershipFor(){return opsMemberships.find(p=>p.project_key===selectedProjectKey);}',
-              'function renderProjectSelection(){}async function loadAudit(){}async function loadMengzhengConfig(){}async function loadStewardDashboard(){}',
-              'async function loadProjectRuntimeConfig(){}async function loadRuntimeConsumerStatus(){}function renderRuntimeConfig(){}function renderRuntimeConsumerStatus(){}',
-              'async function prepareMfa(){}async function bootstrapAuthenticatedSession(){}function clearSensitiveBrowserState(){clearAgentStatusOps();token="";}',
-              session,shared,board,project,
-              'return {read:loadAgentStatusOps,auth:authApi,api,clear:clearAgentStatusOps,ensure:agentOpsEnsureTimers,select:async key=>{selectedProjectKey=key;await applyProjectSelection();},newSession(){clearOperationsSessionStorage();token="NEW_FAKE_SESSION";setAuthStage("console");},token:()=>token,refresh:refreshAccessTokenFromStoredSession,seedRefresh(){sessionStorage.setItem(OPS_REFRESH_STORAGE_KEY,"FAKE_REFRESH");sessionStorage.setItem(OPS_SESSION_STARTED_STORAGE_KEY,Date.now());}};'
-            ].join('\n'));
-            const h=create(node,document,fetch,sessionStorage,(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},id=>timers.delete(id));
-            return {h,node,queue,requests,timers,document};
-          }
-          function response(status,value){return {status,ok:status>=200&&status<300,json:async()=>value};}
-          function deferred(){let resolve;return {promise:new Promise(r=>resolve=r),resolve:v=>resolve(v)};}
-          async function populated(){const x=harness();await x.h.select('xiaoshutong');x.queue.push(async()=>response(200,row));await x.h.read();x.node('agentPersonalBoard').classList.remove('hidden');x.node('agentPersonalTitle').textContent='FIXTURE_PERSONAL';x.h.ensure();return x;}
-          function cleared(x){assert.equal(x.node('agentStatusOpsList').innerHTML,'');assert.ok(x.node('agentPersonalBoard').classList.contains('hidden'));assert.equal(x.node('agentPersonalTitle').textContent,'个人看板');assert.equal(x.timers.size,0);}
-          test('project switch immediately clears board and personal panel',async()=>{const x=await populated();await x.h.select('mengzheng');cleared(x);});
-          test('manual reads in another project never call status endpoint',async()=>{const x=await populated();await x.h.select('mengzheng');const n=x.requests.length;await x.h.read();assert.equal(x.requests.length,n);});
-          test('board is hidden outside xiaoshutong and shown on return',async()=>{const x=await populated();await x.h.select('dev-steward');assert.ok(x.node('agentStatusOps').classList.contains('hidden'));await x.h.select('xiaoshutong');assert.ok(!x.node('agentStatusOps').classList.contains('hidden'));});
-          test('late board success cannot render in another project',async()=>{const x=harness();await x.h.select('xiaoshutong');const d=deferred();x.queue.push(()=>d.promise);const old=x.h.read();await x.h.select('mengzheng');d.resolve(response(200,row));await old;cleared(x);});
-          test('late board 401 cannot invalidate another project session',async()=>{const x=harness();await x.h.select('xiaoshutong');const d=deferred();x.queue.push(()=>d.promise);const old=x.h.read();await x.h.select('mengzheng');d.resolve(response(401,{}));await old;assert.equal(x.h.token(),'FAKE_SESSION');assert.equal(x.requests.length,1);});
-          test('project roundtrip prevents old board 401 from invalidating returned session',async()=>{const x=harness();await x.h.select('xiaoshutong');const d=deferred();x.queue.push(()=>d.promise);const old=x.h.read();await x.h.select('mengzheng');await x.h.select('xiaoshutong');d.resolve(response(401,{}));await old;assert.equal(x.h.token(),'FAKE_SESSION');});
-          test('old board finally cannot release new project request',async()=>{const x=harness();await x.h.select('xiaoshutong');const a=deferred(),b=deferred();x.queue.push(()=>a.promise);const old=x.h.read();await x.h.select('mengzheng');await x.h.select('xiaoshutong');x.queue.push(()=>b.promise);const fresh=x.h.read();a.resolve(response(200,row));await old;assert.equal(x.node('agentStatusOpsRefresh').disabled,true);assert.equal(x.node('agentStatusOpsList').innerHTML,'');b.resolve(response(200,row));await fresh;assert.ok(x.node('agentStatusOpsList').innerHTML.includes('FIXTURE_PROJECT_A'));});
-          test('shared old session 401 preserves new token and board',async()=>{const x=await populated(),d=deferred();x.queue.push(()=>d.promise);const old=x.h.api('audit').catch(e=>e);x.h.newSession();x.queue.push(async()=>response(200,row));await x.h.read();d.resolve(response(401,{}));const e=await old;assert.equal(e.code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');assert.ok(x.node('agentStatusOpsList').innerHTML.includes('FIXTURE_PROJECT_A'));});
-          test('shared old session success rejects result',async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const old=x.h.api('audit').catch(e=>e);x.h.newSession();d.resolve(response(200,{private:'OLD_FIXTURE'}));assert.equal((await old).code,'STALE_SESSION');});
-          for(const status of [200,401,403])test('shared old project '+status+' rejects without changing session',async()=>{const x=harness();await x.h.select('xiaoshutong');const d=deferred();x.queue.push(()=>d.promise);const old=x.h.api('audit','GET',null,{project:'xiaoshutong'}).catch(e=>e);await x.h.select('mengzheng');d.resolve(response(status,{private:'OLD_PROJECT'}));assert.equal((await old).code,'STALE_PROJECT');assert.equal(x.h.token(),'FAKE_SESSION');});
-          test('shared project roundtrip rejects old result',async()=>{const x=harness();await x.h.select('xiaoshutong');const d=deferred();x.queue.push(()=>d.promise);const old=x.h.api('audit').catch(e=>e);await x.h.select('mengzheng');await x.h.select('xiaoshutong');d.resolve(response(200,{}));assert.equal((await old).code,'STALE_PROJECT');});
-          for(const which of ['auth','api'])test(which+' current 401 clears sensitive board and timers',async()=>{const x=await populated();x.queue.push(async()=>response(401,{}));await (which==='auth'?x.h.auth('/auth/v1/user','GET',null,false):x.h.api('audit','GET',null,{},false)).catch(()=>{});assert.equal(x.h.token(),'');cleared(x);});
-          for(const which of ['auth','api'])test(which+' current 403 clears board without invalidating token',async()=>{const x=await populated();x.queue.push(async()=>response(403,{}));await (which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(()=>{});assert.equal(x.h.token(),'FAKE_SESSION');cleared(x);assert.ok(x.node('agentStatusOpsState').textContent.includes('权限不足'));});
-          test('auth old session 401 is ignored',async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const old=x.h.auth('/auth/v1/user').catch(e=>e);x.h.newSession();d.resolve(response(401,{}));assert.equal((await old).code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');});
-          test('refresh rejection clears populated sensitive board immediately',async()=>{const x=await populated();x.h.seedRefresh();x.queue.push(async()=>response(401,{}),async()=>response(400,{}));await x.h.auth('/auth/v1/user').catch(()=>{});assert.equal(x.h.token(),'');cleared(x);});
-          test('old shared refresh completion cannot retry using new session',async()=>{const x=harness(),d=deferred();x.h.seedRefresh();x.queue.push(async()=>response(401,{}),()=>d.promise);const old=x.h.api('audit').catch(e=>e);for(let i=0;i<12;i++)await Promise.resolve();assert.equal(x.requests.length,2);x.h.newSession();d.resolve(response(200,{access_token:'OLD_REFRESH_FIXTURE'}));assert.equal((await old).code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');assert.equal(x.requests.length,2);});
-          test('successful manual recovery after 403 restores hourly fallback',async()=>{const x=await populated();x.queue.push(async()=>response(403,{}));await x.h.auth('/auth/v1/user').catch(()=>{});assert.equal(x.timers.size,0);x.queue.push(async()=>response(200,row));await x.h.read();assert.ok(x.node('agentStatusOpsList').innerHTML.includes('FIXTURE_PROJECT_A'));assert.equal(x.timers.size,1);});
-          function blobHash(b){return crypto.createHash('sha1').update('blob '+b.length+'\0').update(b).digest('hex');}
-          // Exact main f3986e8 blob identities; no local/private manifest is required in CI.
-          test('StudyRoom owns the live team board and workspace does not',()=>{
-            const sr=fs.readFileSync(path.join(root,'studyroom.html'),'utf8');
-            const ws=fs.readFileSync(path.join(root,'workspace.html'),'utf8');
-            for(const marker of [
-              'id="srAgentOverview"',
-              'id="srAgentPersonal"',
-              'id="srAgentPersonalContent"',
-              '<script src="./board-consumer.js"></script>',
-              'BoardConsumer.renderOverview(',
-              'BoardConsumer.renderPersonal(',
-              '/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id'
-            ]) assert.ok(sr.includes(marker),'StudyRoom live-board marker missing: '+marker);
-            assert.ok(!sr.includes('团队看板已迁移至 workspace 新版'),'StudyRoom must not redirect its own board to workspace');
-            assert.ok(!sr.includes('workspace.html#agentStatusOps'),'StudyRoom must not route board traffic to workspace');
-            for(const marker of ['id="agentStatusOps"','id="agentPersonalEntry"','id="agentPersonalBoard"']){
-              assert.ok(!ws.includes(marker),'generic workspace must not embed StudyRoom board: '+marker);
-            }
-          });
-          test('original main f3986 security prefix allows only reviewed public-boundary extensions',()=>{
-            let source=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');
-            const board='board-'+'consumer.js';
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import fs from "node:fs";
+          const app=fs.readFileSync("app.js","utf8");
+          const room=fs.readFileSync("studyroom.html","utf8");
+          const pub=fs.readFileSync("status-public.js","utf8");
+          const imported=await import("./board-consumer.js");
+          const B=imported.default?.renderControlOverview?imported.default:(globalThis.BoardConsumer||imported);
+          const N={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
+          const now="2026-10-05T04:00:00.000Z";
+          const row=(id,o={})=>({agent_id:id,display_name:N[id],adapter_type:id==="xia"?"dot":"muse",
+            refresh_mode:id==="xia"?"legacy_passive":"active",activity_state:"idle",freshness:"fresh",
+            observer_freshness:"fresh",current_task_title:null,current_task_detail:null,current_progress:null,
+            last_task_title:"SYNTHETIC_"+id,last_task_detail:"done",last_blocker:null,last_report_at:now,
+            last_observed_at:now,report_source:id==="xia"?"legacy-github":"xstpilot",revision:1,...o});
+          const rows=Object.keys(N).map(id=>row(id));
 
-            // PR #79 reviewed presentation extensions are pinned as exact Git blobs,
-            // then removed before the immutable f3986 prefix hash is evaluated.
-            const presentationStart='          board_'+'consumer = Path("board-consumer.js").read_text(encoding="utf-8")';
-            const presentationEnd='          # Whole-repository public-'+'boundary audit.';
-            const presentationA=source.indexOf(presentationStart);
-            const presentationB=source.indexOf(presentationEnd,presentationA);
-            assert.ok(presentationA>=0&&presentationB>presentationA,'reviewed v3 presentation boundary missing');
-            const presentationBlock=source.slice(presentationA,presentationB);
-            assert.equal(blobHash(Buffer.from(presentationBlock)),'fb0fed5e32d63d15d088abde6f73f2374e761426','reviewed v3 presentation block drifted');
-            source=source.slice(0,presentationA)+'\n\n'+source.slice(presentationB);
+          const valid=B.validateControlRows(rows,N);
+          assert.equal(valid.length,6);
+          assert.equal(valid.at(-1).refresh_mode,"legacy_passive");
+          assert.throws(()=>B.validateControlRows([...rows,row("bi")],N));
+          assert.throws(()=>B.validateControlRows([{...row("bi"),current_progress:101}],N));
 
-            const consumerSyntax='          node --check board-'+'consumer.js\n';
-            assert.equal(source.split(consumerSyntax).length-1,1,'reviewed board-consumer syntax check must occur exactly once');
-            source=source.replace(consumerSyntax,'');
+          const overview=B.renderControlOverview(
+            B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,freshness:"stale"}:r),N),N,"fixture"
+          );
+          assert.match(overview,/状态新鲜/);
+          assert.match(overview,/观察器在线/);
+          assert.match(overview,/状态陈旧/);
 
-            const inlineAnchor='          node --check /tmp/studyroom-inline.js\n';
-            const rendererA=source.indexOf(inlineAnchor);
-            assert.ok(rendererA>=0,'StudyRoom inline syntax anchor missing');
-            const rendererStart=rendererA+inlineAnchor.length;
-            const rendererEndMarker='      - name: Verify hourly and manual team-'+'board refresh';
-            const rendererEnd=source.indexOf(rendererEndMarker,rendererStart);
-            assert.ok(rendererEnd>rendererStart,'reviewed Chinese renderer Gate boundary missing');
-            const rendererBlock=source.slice(rendererStart,rendererEnd);
-            assert.equal(blobHash(Buffer.from(rendererBlock)),'6bfbfcf7d1629e76a6e5133f34862d74d9d780b5','reviewed Chinese renderer Gate drifted');
-            source=source.slice(0,rendererStart)+source.slice(rendererEnd);
+          let personal=B.renderControlPersonal("bi","笔",valid[0],Date.parse(now));
+          assert.match(personal,/LAST/);
+          assert.doesNotMatch(personal,/CURRENT/);
+          const busy=B.validateControlRows([row("mo",{activity_state:"busy",current_task_title:"CURRENT_JOB",current_progress:42})],N)[0];
+          personal=B.renderControlPersonal("mo","墨",busy,Date.parse(now));
+          assert.match(personal,/CURRENT_JOB/);
+          assert.match(personal,/42%/);
+          const escaped=B.renderControlPersonal("bi","笔",
+            B.validateControlRows([row("bi",{activity_state:"busy",current_task_title:"<img onerror=x>",current_task_detail:"<script>x</script>"})],N)[0],
+            Date.parse(now));
+          assert.match(escaped,/&lt;img onerror=x&gt;/);
+          assert.ok(escaped.includes("&lt;script&gt;x&lt;/script&gt;"));
+          assert.doesNotMatch(escaped,/<h4><img/);
+          assert.doesNotMatch(escaped,/<p><script>/);
 
-            const avatarImport=[
-              '          from pathlib import Path',
-              '          import hashlib',
-              '          import re',
-            ].join('\n');
-            const originalImport=[
-              '          from pathlib import Path',
-              '          import re',
-            ].join('\n');
-            const avatarDeclaration=[
-              '          character_assets = {',
-              '              "assets/characters/bi.png": "a9dba9b4714f3fdcd2005c805cc4a389f7d0387f",',
-              '              "assets/characters/mo.png": "6a383eaf342d46dcbad7daf0dc70508fee280318",',
-              '              "assets/characters/zhi.png": "1ae56784b32d50ce9efbdfded0e9c315c886111a",',
-              '              "assets/characters/yan.png": "1346f38b0e4449f4fe0e43f9f8081fffd11ae523",',
-              '              "assets/characters/juan.png": "4bc232cbfb237baed8a96c0fb14607930f4557b4",',
-              '              "assets/characters/xia.png": "4039caeacf3e449e412b95f0422af39d137350b8",',
-              '          }',
-              '',
-            ].join('\n');
-            const avatarValidation=[
-              '              if rel in character_assets:',
-              '                  data = path.read_bytes()',
-              '                  if not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):',
-              '                      raise SystemExit("approved character asset is not PNG: " + rel)',
-              '                  git_blob = hashlib.sha1(',
-              '                      b"blob " + str(len(data)).encode("ascii") + b"\\0" + data',
-              '                  ).hexdigest()',
-              '                  if git_blob != character_assets[rel]:',
-              '                      raise SystemExit("StudyRoom character asset drifted from approved App source: " + rel)',
-              '                  continue',
-              '',
-            ].join('\n');
-            const avatarUnion='          } | set('+'character_assets)';
-            const reviewedDeltas=[
-              ['Path("app.js"), Path("'+board+'"), Path("README.md")','Path("app.js"), Path("README.md")','board-consumer source scan'],
-              ['".github/workflows/security.yml", "status-public.js", "devices.html", "'+board+'",','".github/workflows/security.yml", "status-public.js", "devices.html",','board-consumer allowlist'],
-              [avatarImport,originalImport,'avatar hashlib import'],
-              [avatarDeclaration,'','avatar exact allowlist declaration'],
-              [avatarUnion,'          }','avatar allowlist union'],
-              [avatarValidation,'','avatar binary pin validation'],
-            ];
-            for(const [from,to,label] of reviewedDeltas){
-              assert.equal(source.split(from).length-1,1,'reviewed security delta must occur exactly once: '+label);
-              source=source.replace(from,to);
-            }
-            assert.equal(blobHash(Buffer.from(source).subarray(0,36879)),'206a6d172c8f66bea68d345547c9447edfeb320b');
-          });
-          test('runtime boundary and refresh steps are main-push-only',()=>{const w=fs.readFileSync(path.join(root,'.github/workflows/security.yml'),'utf8');for(const name of ['Verify hourly and manual team-board refresh','Verify team-board project and session boundaries','Verify shared current-snapshot personal board']){const a=w.indexOf('      - name: '+name);assert.ok(a>=0,'Runtime step exists: '+name);const step=w.slice(a).split('\n      - name: ')[0],b=step.indexOf('\n        run: |');assert.ok(b>=0);assert.ok(step.slice(0,b).split('\n').includes("        if: github.event_name == 'push' && github.ref == 'refs/heads/main'"));}});
+          assert.match(app,/AGENT_CONTROL_V2_PATH="\/functions\/v1\/studyroom-agent-control"/);
+          assert.match(app,/runAgentStatusRequest\("state"\)/);
+          assert.match(app,/runAgentStatusRequest\("refresh"\)/);
+          assert.match(app,/AGENT_OPS_FOLLOWUP_LIMIT=6/);
+          assert.doesNotMatch(app,/\/rest\/v1\/agent_status\?select=/);
+          const appFollow=app.slice(app.indexOf("function agentOpsStartFollowup"),app.indexOf("function agentOpsErrorMessage"));
+          assert.match(appFollow,/loadAgentStatusOps\(\)/);
+          assert.doesNotMatch(appFollow,/refreshAgentStatusOps\(\)/);
 
-          for(const which of ['auth','api'])test('independent: '+which+' JSON completion after relogin rejects',async()=>{const x=await populated(),d=deferred();x.queue.push(async()=>({status:200,ok:true,json:()=>d.promise}));const old=(which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(e=>e);for(let i=0;i<5;i++)await Promise.resolve();x.h.newSession();d.resolve({private:'OLD'});assert.equal((await old).code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');});
-          test('independent: JSON completion after project roundtrip rejects',async()=>{const x=harness(),d=deferred();await x.h.select('xiaoshutong');x.queue.push(async()=>({status:200,ok:true,json:()=>d.promise}));const old=x.h.read();for(let i=0;i<5;i++)await Promise.resolve();await x.h.select('mengzheng');await x.h.select('xiaoshutong');d.resolve(row);await old;assert.equal(x.node('agentStatusOpsList').innerHTML,'');});
-          test('independent: permission clearing invalidates already in-flight board success',async()=>{const x=await populated(),d=deferred();x.queue.push(()=>d.promise);const old=x.h.read();x.queue.push(async()=>response(403,{}));await x.h.api('audit').catch(()=>{});d.resolve(response(200,row));await old;cleared(x);});
-          test('independent: refresh concurrent callers use one refresh request',async()=>{const x=harness(),d=deferred();x.h.seedRefresh();x.queue.push(()=>d.promise);const a=x.h.refresh(),b=x.h.refresh();assert.equal(x.requests.length,1);d.resolve(response(200,{access_token:'ROTATED'}));assert.equal(await a,true);assert.equal(await b,true);assert.equal(x.h.token(),'ROTATED');});
-          test('independent: cancelled old refresh finally cannot release new refresh lock',async()=>{const x=harness(),a=deferred(),b=deferred();x.h.seedRefresh();x.queue.push(()=>a.promise);const old=x.h.refresh();x.h.newSession();x.h.seedRefresh();x.queue.push(()=>b.promise);const fresh=x.h.refresh();a.resolve(response(200,{access_token:'OLD'}));assert.equal(await old,false);const concurrent=x.h.refresh();assert.equal(x.requests.length,2);b.resolve(response(200,{access_token:'NEW'}));assert.equal(await fresh,true);assert.equal(await concurrent,true);assert.equal(x.h.token(),'NEW');});
-          for(const which of ['auth','api'])test('independent: '+which+' current refresh rejection returns to login',async()=>{const x=await populated();x.h.seedRefresh();x.queue.push(async()=>response(401,{}),async()=>response(400,{}));const e=await (which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(e=>e);assert.equal(x.h.token(),'');cleared(x);assert.ok(x.node('console').classList.contains('hidden'),'console must be hidden after current session refresh rejection; returned '+e.code);});
-          for(const which of ['auth','api'])test('independent: '+which+' missing refresh token returns to login',async()=>{const x=await populated();x.queue.push(async()=>response(401,{}));await (which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(()=>{});assert.equal(x.h.token(),'');cleared(x);assert.ok(x.node('console').classList.contains('hidden'),'console must be hidden after 401 without refresh token');});
-          test('independent: cancelled old audit cannot overwrite new project audit',async()=>{
-            const nodes=new Map(),queue=[];const node=id=>{if(!nodes.has(id))nodes.set(id,{textContent:''});return nodes.get(id);};
-            const audit=section('async function loadAudit(){','function renderAiEntitlements(');
-            const create=new Function('$','fetch',[
-              'let token="FAKE",operationsSessionGeneration=0,operationsProjectGeneration=0,selectedProjectKey="xiaoshutong";const BASE="https://fixture.invalid",PUB="public",FN=BASE;',
-              'function clearOperationsSessionStorage(){}function clearAgentStatusOps(){}function setAuthStage(){}function refreshAccessTokenFromStoredSession(){return false;}function renderAudit(events){$("auditLog").textContent=JSON.stringify(events);}',
-              section('function assertOperationsRequestCurrent(','async function authApi('),shared,audit,
-              'return {audit:loadAudit,switch(){selectedProjectKey="mengzheng";operationsProjectGeneration++;}};'
-            ].join('\n'));
-            const h=create(node,async()=>await queue.shift()());const oldResponse=deferred();queue.push(()=>oldResponse.promise);const old=h.audit();h.switch();queue.push(async()=>response(200,{events:['NEW_PROJECT_AUDIT']}));await h.audit();assert.ok(node('auditLog').textContent.includes('NEW_PROJECT_AUDIT'));oldResponse.resolve(response(200,{events:['OLD_PROJECT_AUDIT']}));await old;assert.ok(node('auditLog').textContent.includes('NEW_PROJECT_AUDIT'),'old STALE_PROJECT catch must not overwrite current audit');
-          });
+          assert.match(room,/SR_AGENT_CONTROL_PATH="\/functions\/v1\/studyroom-agent-control"/);
+          assert.match(room,/BoardConsumer\.validateControlRows/);
+          assert.match(room,/BoardConsumer\.renderControlOverview/);
+          assert.match(room,/SR_AGENT_FOLLOWUP_LIMIT=6/);
+          assert.doesNotMatch(room,/\/rest\/v1\/agent_status\?select=/);
+          const all=room.slice(room.indexOf("function refreshAll(){"),room.indexOf("(function(){",room.indexOf("function refreshAll(){")));
+          assert.match(all,/loadAgents\(\)/);
+          assert.doesNotMatch(all,/refreshAgents\(\)/);
+          const follow=room.slice(room.indexOf("function startSrAgentFollowup"),room.indexOf("async function loadAgents"));
+          assert.match(follow,/loadAgents\(\)/);
+          assert.doesNotMatch(follow,/refreshAgents\(\)/);
 
-          for(const which of ['auth','api'])test('round2: '+which+' missing refresh is AUTH_REQUIRED and visible login',async()=>{const x=await populated();x.queue.push(async()=>response(401,{}));const e=await (which==='auth'?x.h.auth('/auth/v1/user'):x.h.api('audit')).catch(e=>e);assert.equal(e.code,'AUTH_REQUIRED');assert.equal(e.status,401);assert.ok(!x.node('login').classList.contains('hidden'));cleared(x);});
-          for(const status of [400,401,403,200])test('round2: current refresh '+status+' rejection/missing session is AUTH_REQUIRED',async()=>{const x=await populated();x.h.seedRefresh();x.queue.push(async()=>response(401,{}),async()=>response(status,{}));const e=await x.h.api('audit').catch(e=>e);assert.equal(e.code,'AUTH_REQUIRED');assert.equal(e.status,401);assert.equal(x.h.token(),'');assert.ok(x.node('console').classList.contains('hidden'));assert.ok(!x.node('login').classList.contains('hidden'));cleared(x);});
-          for(const status of [400,401,403])test('round2: old refresh '+status+' rejection does not invalidate newer session',async()=>{const x=harness(),d=deferred();x.h.seedRefresh();x.queue.push(async()=>response(401,{}),()=>d.promise);const old=x.h.api('audit').catch(e=>e);for(let i=0;i<12;i++)await Promise.resolve();assert.equal(x.requests.length,2);x.h.newSession();d.resolve(response(status,{}));assert.equal((await old).code,'STALE_SESSION');assert.equal(x.h.token(),'NEW_FAKE_SESSION');assert.ok(!x.node('console').classList.contains('hidden'));assert.ok(x.node('login').classList.contains('hidden'));});
-          NODE
-          node --test /tmp/team-board-boundaries.cjs
-      - name: Verify shared current-snapshot personal board
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        # Synthetic fixtures; trusted main only, matching existing execution policy.
-        run: |
-          node <<'NODE'
-          const {readFileSync}=require('node:fs');
-          async function runCurrentSnapshotTests(app,workspace,workflow,studyroom){
-           const results=[],tests=[];const assert=(v,m="assertion failed")=>{if(!v)throw Error(m)},eq=(a,b,m="value")=>assert(a===b,m+": "+a+" !== "+b);
-           const test=(n,f)=>tests.push([n,f]);
-           const section=(a,b)=>{const s=app.indexOf(a),e=app.indexOf(b,s);assert(s>=0&&e>s,"missing source boundary "+a);return app.slice(s,e);};
-           const NOW=Date.UTC(2026,9,4,9),names=["bi","mo","zhi","yan","juan","xia"];
-           const rows=()=>names.map(id=>({id,status:"in_progress",task_name:"SYNTHETIC_"+id,task_detail:"DETAIL_"+id,updated_at:new Date(NOW).toISOString()}));
-           const response=(status,value)=>({status,ok:status>=200&&status<300,json:async()=>value});
-           const deferred=()=>{let resolve;return {promise:new Promise(r=>resolve=r),resolve:v=>resolve(v)};};
-           function harness(){
-            const nodes=new Map(),queue=[],requests=[],timers=new Map();let now=NOW,id=0;
-            const node=k=>{if(!nodes.has(k)){const classes=new Set(["agentPersonalBoard","login"].includes(k)?["hidden"]:[]);nodes.set(k,{innerHTML:"",textContent:"",disabled:false,value:"",handlers:new Map(),addEventListener(t,f){this.handlers.set(t,f)},scrollIntoView(){},classList:{contains:k=>classes.has(k),add:k=>classes.add(k),remove:k=>classes.delete(k),toggle:(k,v)=>v?classes.add(k):classes.delete(k)}});}return nodes.get(k);};
-            const storage=new Map(),sessionStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
-            const document={hidden:false,body:node("body")};class FakeDate extends Date{constructor(...a){super(...(a.length?a:[now]));}static now(){return now;}}
-            const fetch=async(url,opts)=>{requests.push({url,method:opts.method,headers:opts.headers});return queue.length?await queue.shift()():response(200,rows());};
-            const body=[
-             'let token="FAKE_SESSION",operationsRefreshPromise=null,selectedProjectKey="xiaoshutong",operationsProjectGeneration=0;const BASE="https://fixture.invalid",PUB="public",FN=BASE;',
-             'const OPS_REFRESH_STORAGE_KEY="mz_ops_refresh_token",OPS_SESSION_STARTED_STORAGE_KEY="mz_ops_session_started_at",OPS_SESSION_MAX_AGE_MS=28800000;',
-             'let opsMemberships=[{project_key:"xiaoshutong",repository_full_name:"example/a"},{project_key:"mengzheng",repository_full_name:"example/b"}];function membershipFor(){return opsMemberships.find(p=>p.project_key===selectedProjectKey);}',
-             section("function setAuthStage(stage){","function consumePasswordSetupCallback()"),
-             'async function prepareMfa(){}async function bootstrapAuthenticatedSession(){}function clearSensitiveBrowserState(){clearAgentStatusOps();token="";}',
-             section("let operationsSessionGeneration=","function qrDataUri("),
-             section("async function api(","async function prepareMfa("),
-             section("/* 六席状态","async function loadSecuritySettings()"),
-             section('$("agentStatusOpsList")?.addEventListener(',"async function initializeOperationsSession()"),
-             'return {read:loadAgentStatusOps,open:openAgentPersonalBoard,refresh:loadAgentPersonalBoard,close:closeAgentPersonalBoard,visibility:agentOpsOnVisibilityChange,clear:clearAgentStatusOps,switchProject(key){selectedProjectKey=key;syncAgentOpsProject();},newSession(){clearOperationsSessionStorage();token="NEW_FAKE";setAuthStage("console");},logout(){clearOperationsSessionStorage();token="";setAuthStage("login");},token:()=>token};'
-            ].join("\n");
-            const h=new Function("$","document","fetch","sessionStorage","Date","setInterval","clearInterval",body)(node,document,fetch,sessionStorage,FakeDate,(fn,ms)=>{timers.set(++id,{fn,ms});return id;},id=>timers.delete(id));
-            const flush=async()=>{for(let i=0;i<30;i++)await Promise.resolve();};
-            return {h,node,queue,requests,timers,document,flush,count:()=>requests.filter(r=>r.url.includes("/rest/v1/agent_status")).length,advance:ms=>now+=ms,tick:async()=>{for(const t of [...timers.values()])t.fn();await flush();}};
-           }
-           const html=x=>x.node("agentPersonal_current").innerHTML;
-           const populated=async()=>{const x=harness();await x.h.read();await x.h.open("bi");await x.flush();return x;};
-           test("personal uses current authenticated REST, never agent_board",async()=>{const x=harness();await x.h.open("bi");await x.flush();eq(x.count(),1);assert(!x.requests.some(r=>r.url.includes("agent_board")));assert(html(x).includes("SYNTHETIC_bi"));eq(x.requests[0].headers.Authorization,"Bearer FAKE_SESSION");});
-           for(const id of names)test("seat "+id+" renders only its snapshot",async()=>{const x=await populated();await x.h.open(id);eq(x.count(),1);assert(html(x).includes("SYNTHETIC_"+id));for(const other of names.filter(n=>n!==id))assert(!html(x).includes("SYNTHETIC_"+other));});
-           test("personal manual refresh updates total and detail once",async()=>{const x=await populated(),r=rows();r[0].task_name="CHANGED";x.queue.push(async()=>response(200,r));await x.h.refresh();eq(x.count(),2);assert(html(x).includes("CHANGED"));assert(x.node("agentStatusOpsList").innerHTML.includes("CHANGED"));});
-           test("simultaneous total and personal clicks share one in-flight read",async()=>{const x=await populated(),d=deferred();x.queue.push(()=>d.promise);const p=x.h.read();await x.h.refresh();await x.h.refresh();eq(x.count(),2);d.resolve(response(200,rows()));await p;await x.flush();eq(x.count(),2);});
-           test("exactly hourly shared fallback, no 30 second polling",async()=>{const x=await populated();x.advance(3599999);await x.tick();eq(x.count(),1);x.advance(1);await x.tick();eq(x.count(),2);await x.tick();eq(x.count(),2);assert(!/AGENT_OPS_TRACK_MS|agentOpsTrack30s/.test(app));});
-           test("manual refresh resets the shared hourly deadline",async()=>{const x=await populated();x.advance(1800000);await x.h.refresh();x.advance(1800000);await x.tick();eq(x.count(),2);});
-           test("hidden page sends no total or personal reads",async()=>{const x=await populated();x.document.hidden=true;x.h.visibility();await x.h.refresh();await x.h.read();x.advance(7200000);await x.tick();eq(x.count(),1);});
-           test("fresh visibility return does not fetch",async()=>{const x=await populated();x.document.hidden=true;x.h.visibility();x.document.hidden=false;x.h.visibility();await x.flush();eq(x.count(),1);});
-           test("hidden in-flight completion requires exactly one pending read",async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const p=x.h.open("bi");x.document.hidden=true;x.h.visibility();d.resolve(response(200,rows()));await p;x.document.hidden=false;x.h.visibility();await x.flush();eq(x.count(),2);await x.tick();eq(x.count(),2);});
-           test("HTTP 200 empty clears prior data and cannot claim success/no tasks",async()=>{const x=await populated();x.queue.push(async()=>response(200,[]));await x.h.refresh();assert(!html(x).includes("SYNTHETIC"));eq(x.node("agentStatusOpsList").innerHTML,"");assert(x.node("agentStatusOpsState").textContent.includes("UNAVAILABLE"));x.queue.push(async()=>response(200,[]));await x.h.open("bi");assert(!html(x).includes("SYNTHETIC"));});
-           test("missing seat removes old detail without claiming no tasks",async()=>{const x=await populated();x.queue.push(async()=>response(200,rows().filter(r=>r.id!=="bi")));await x.h.refresh();assert(!html(x).includes("SYNTHETIC_bi"));assert(/未上报|未取得/.test(html(x)+x.node("agentPersonalState").textContent));assert(!html(x).includes("暂无任务"));});
-           for(const mode of ["duplicate","unknown","malformed"])test("invalid rows "+mode+" fail closed",async()=>{const x=await populated(),r=rows();if(mode==="duplicate")r.push(r[0]);if(mode==="unknown")r[0].id="outside";if(mode==="malformed")r[0].task_name={private:"data"};x.queue.push(async()=>response(200,r));await x.h.refresh();assert(!html(x).includes("SYNTHETIC"));eq(x.node("agentStatusOpsList").innerHTML,"");assert(x.node("agentStatusOpsState").textContent.includes("UNAVAILABLE"));});
-           test("other projects never request or reuse global status",async()=>{const x=await populated();x.h.switchProject("mengzheng");await x.h.open("bi");eq(x.count(),1);assert(!html(x).includes("SYNTHETIC"));assert(x.node("agentPersonalEntry").classList.contains("hidden"));});
-           test("project switch rejects late response",async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const p=x.h.open("bi");x.h.switchProject("mengzheng");d.resolve(response(200,rows()));await p;assert(!html(x).includes("SYNTHETIC"));eq(x.node("agentStatusOpsList").innerHTML,"");});
-           test("seat switch during shared read renders only new seat",async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const p=x.h.open("bi");await x.h.open("mo");d.resolve(response(200,rows()));await p;await x.flush();assert(html(x).includes("SYNTHETIC_mo"));assert(!html(x).includes("SYNTHETIC_bi"));eq(x.count(),1);});
-           for(const status of [401,403])test("HTTP "+status+" clears snapshot and detail",async()=>{const x=await populated();x.queue.push(async()=>response(status,{}));await x.h.refresh();assert(!html(x).includes("SYNTHETIC"));eq(x.node("agentStatusOpsList").innerHTML,"");assert(x.node("agentPersonalBoard").classList.contains("hidden"));});
-           test("new login cannot be repopulated by old response",async()=>{const x=harness(),d=deferred();x.queue.push(()=>d.promise);const p=x.h.open("bi");x.h.logout();x.h.newSession();const r=rows();r[0].task_name="NEW_SESSION";x.queue.push(async()=>response(200,r));await x.h.open("bi");d.resolve(response(200,rows()));await p;assert(html(x).includes("NEW_SESSION"));assert(!html(x).includes("SYNTHETIC_bi"));});
-           for(const stamp of [new Date(NOW-3600000).toISOString(),"invalid",new Date(NOW+1000).toISOString()])test("source time stale "+stamp,async()=>{const x=harness(),r=rows();r[0].updated_at=stamp;x.queue.push(async()=>response(200,r));await x.h.open("bi");assert(x.node("agentPersonalState").textContent.includes("STALE"));assert(x.node("agentStatusOpsList").innerHTML.includes("STALE"));});
-           test("snapshot text is escaped and never converted to approval/evidence",async()=>{const x=harness(),r=rows();r[0].task_name='<img src=x onerror="attack">';r[0].task_detail="<script>attack</script>";x.queue.push(async()=>response(200,r));await x.h.open("bi");assert(!html(x).includes("<img"));assert(!html(x).includes("<script>"));assert(html(x).includes("&lt;"));assert(!/APPROVED|head：|批准来源|核对证据/.test(html(x)));});
-           test("same-session network error retains only stale snapshot",async()=>{const x=await populated();x.queue.push(async()=>{throw Error("offline")});await x.h.refresh();assert(html(x).includes("SYNTHETIC_bi"));assert(x.node("agentPersonalState").textContent.includes("STALE"));});
-           test("StudyRoom owns the current-snapshot board without history/approval scope",async()=>{
-             assert(!/agentPersonal_(approved_backlog|pending_decision|recent_completed|archived)/.test(studyroom));
-             for(const marker of ['id="srAgentOverview"','id="srAgentPersonal"','id="srAgentPersonalContent"','BoardConsumer.renderOverview(','BoardConsumer.renderPersonal(','/rest/v1/agent_status?select=id,status,task_name,task_detail,updated_at&order=id'])
-               assert(studyroom.includes(marker),"StudyRoom current-board marker missing: "+marker);
-             assert(!app.includes('api("agent_board"'));
-             for(const marker of ['id="agentStatusOps"','id="agentPersonalEntry"','id="agentPersonalBoard"'])
-               assert(!workspace.includes(marker),"Workspace still embeds StudyRoom board: "+marker);
-             assert(!workspace.includes('class="agent-personal-cols"'));
-           });
-           test("main Character Contract and Muse transport remain intact",async()=>{for(const s of ["Character Contract v1","主对话 · 原话直通","旁聊天 · SOUL/Memory","muse_transport:transport"])assert(studyroom.includes(s),s);assert(workflow.includes("StudyRoom Muse transport controls missing"));});
-           for(const [name,fn] of tests){try{await fn();results.push({name,status:"PASS"});}catch(e){results.push({name,status:"FAIL",message:e.message});}}
-           return results;
-          }
-          
-          runCurrentSnapshotTests(
-           readFileSync('app.js','utf8'),readFileSync('workspace.html','utf8'),
-           readFileSync('.github/workflows/security.yml','utf8'),readFileSync('studyroom.html','utf8')
-          ).then(results=>{
-           for(const r of results)console.log(r.status+' '+r.name+(r.message?': '+r.message:''));
-           if(results.some(r=>r.status!=='PASS'))process.exitCode=1;
-          }).catch(error=>{console.error(error);process.exitCode=1;});
+          assert.match(pub,/\/rest\/v1\/agent_status_public\?select=\*&order=id/);
+          assert.doesNotMatch(pub,/studyroom-agent-control/);
+          assert.doesNotMatch(pub,/method:\s*"POST"/);
+
+          const scripts=[...room.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m=>m[1]).filter(Boolean);
+          assert.ok(scripts.length);
+          for(const source of scripts)assert.doesNotThrow(()=>new Function(source));
+          assert.equal(typeof B.renderOverview,"function");
+          assert.equal(typeof B.renderPersonal,"function");
+          console.log("AGENT_CONTROL_V2_WEB_CONTRACT=PASS");
           NODE
