@@ -444,11 +444,160 @@ function renderPersonal(id,name,row,snapshotReadAt){
   return hero+board;
 }
 
+
+/* ---- 六席状态控制面 v2：当前投影，不伪造任务历史 ---- */
+
+const CONTROL_ACTIVITY = {
+  busy:{label:"工作中",sec:"doing"},
+  blocked:{label:"受阻",sec:"blocked"},
+  idle:{label:"空闲",sec:"wait"},
+  unavailable:{label:"不可用",sec:"blocked"},
+  unknown:{label:"待核验",sec:"unknown"}
+};
+
+function controlFreshness(value){
+  if(value === "fresh") return {key:"fresh",label:"新鲜"};
+  if(value === "stale") return {key:"stale",label:"陈旧"};
+  return {key:"unknown",label:"未曾更新"};
+}
+
+function controlMode(row){
+  if(row?.refresh_mode === "legacy_passive") return "被动兼容同步";
+  return row?.adapter_type === "muse" ? "Muse 主窗口只读观察" : "按需刷新";
+}
+
+function controlTask(row){
+  const active = row?.activity_state === "busy" || row?.activity_state === "blocked";
+  if(active){
+    return {
+      title:String(row?.current_task_title || "当前任务待核验"),
+      detail:String(
+        row?.activity_state === "blocked"
+          ? (row?.last_blocker || row?.current_task_detail || "未提供阻塞说明")
+          : (row?.current_task_detail || "未提供进展说明")
+      ),
+      kind:"current"
+    };
+  }
+  return {
+    title:String(row?.last_task_title ? "最近："+row.last_task_title : "暂无可核验任务"),
+    detail:String(row?.last_task_detail || "未提供最近任务说明"),
+    kind:"last"
+  };
+}
+
+function controlSummary(rows,seatNames){
+  const byId=new Map((rows||[]).map(row=>[row.id,row]));
+  let stateFresh=0,observerFresh=0,busy=0,blocked=0,unknown=0;
+  for(const id of Object.keys(seatNames||{})){
+    const row=byId.get(id);
+    if(!row){unknown++;continue;}
+    if(row.freshness==="fresh")stateFresh++;
+    if(row.observer_freshness==="fresh")observerFresh++;
+    if(row.activity_state==="busy")busy++;
+    else if(row.activity_state==="blocked")blocked++;
+    else if(row.activity_state==="unknown"||row.activity_state==="unavailable")unknown++;
+  }
+  return {stateFresh,observerFresh,busy,blocked,unknown};
+}
+
+function renderControlOverview(rows,seatNames,snapshotMeta){
+  const byId=new Map((rows||[]).map(row=>[row.id,row]));
+  const summary=controlSummary(rows,seatNames);
+  const seats=Object.keys(seatNames||{}).length;
+  const attention=summary.blocked>0||summary.unknown>0||summary.stateFresh<seats;
+  let html='<section class="b3-summary" aria-label="全院当前状态">'
+    +'<div class="b3-summary-heading"><div><span class="b3-kicker">全院态势</span><h3>六席当前投影</h3></div>'
+    +'<span class="b3-summary-fresh '+(attention?"watch":"good")+'">'+(attention?"部分状态待核验":"状态整体新鲜")+'</span></div>'
+    +'<div class="b3-metrics">'
+    +'<div class="b3-metric"><span>状态新鲜</span><strong>'+summary.stateFresh+'<small>/'+seats+'</small></strong></div>'
+    +'<div class="b3-metric"><span>观察器在线</span><strong>'+summary.observerFresh+'<small>/'+seats+'</small></strong></div>'
+    +'<div class="b3-metric doing"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
+    +'<div class="b3-metric blocked"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
+    +'<div class="b3-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
+    +'</div>'
+    +'<p class="b3-summary-note">“观察器在线”只表示最近成功读取，不表示任务事实刚发生变化。</p>'
+    +'</section>';
+
+  html+='<div class="b3-grid">';
+  for(const [id,name] of Object.entries(seatNames||{})){
+    const row=byId.get(id);
+    const openBtn='<button type="button" class="b3-open-seat" data-agent="'+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">查看个人看板 <span aria-hidden="true">→</span></button>';
+    if(!row){
+      html+='<article class="b3-seat-card b3-seat-card-'+esc(id)+'">'
+        +'<div class="b3-seat-head">'+avatarHtml(id,name)
+        +'<div class="b3-seat-name"><strong>'+esc(name)+'</strong><span>'+dot("unknown")+'待核验</span></div>'
+        +'<span class="b3-fresh unknown">尚无数据</span></div>'
+        +'<div class="b3-empty-card"><strong>尚无当前投影</strong><span>不能据此判断本席是否空闲。</span></div>'
+        +'<div class="b3-seat-foot"><span>等待状态同步</span>'+openBtn+'</div></article>';
+      continue;
+    }
+    const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
+    const task=controlTask(row);
+    const sf=controlFreshness(row.freshness),of=controlFreshness(row.observer_freshness);
+    html+='<article class="b3-seat-card b3-seat-card-'+esc(id)+'">'
+      +'<div class="b3-seat-head">'+avatarHtml(id,name)
+      +'<div class="b3-seat-name"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+'</span></div>'
+      +'<span class="b3-fresh '+esc(sf.key)+'">状态'+esc(sf.label)+'</span></div>'
+      +'<div class="b3-main-task"><span class="b3-eyebrow">'+(task.kind==="current"?"当前任务":"最近任务")+'</span>'
+      +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p></div>'
+      +'<div class="b3-parallel quiet"><span>观察器 '+esc(of.label)+' · '+esc(controlMode(row))+'</span></div>'
+      +'<div class="b3-seat-foot"><span>状态 '+esc(formatDateTime(row.last_report_at))
+      +' · 读取 '+esc(formatDateTime(row.last_observed_at))+'</span>'+openBtn+'</div></article>';
+  }
+  html+='</div>';
+  if(snapshotMeta){
+    html+='<p class="b3-caption">'+esc(snapshotMeta)+' · 当前投影不替代 Goal、PR、Review、CI 与设备验收证据。</p>';
+  }
+  return html;
+}
+
+function renderControlPersonal(id,name,row,snapshotReadAt){
+  if(!row){
+    return '<div class="b3-personal-empty"><strong>暂未取得本席当前状态</strong><span>无法确认任务或活动状态。</span></div>';
+  }
+  const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
+  const task=controlTask(row);
+  const sf=controlFreshness(row.freshness),of=controlFreshness(row.observer_freshness);
+  const progress=Number.isInteger(row.current_progress)&&row.current_progress>=0&&row.current_progress<=100
+    ?row.current_progress:null;
+  const hero='<section class="b3-personal-hero">'
+    +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div>'
+    +'<span class="b3-kicker">个人态势</span><h3>'+esc(name)+' · 当前状态</h3>'
+    +'<p>'+dot(activity.sec)+esc(activity.label)+' · 状态'+esc(sf.label)+' · 观察器'+esc(of.label)+'</p></div></div>'
+    +'<div class="b3-personal-metrics">'
+    +'<div><span>状态</span><strong>'+esc(activity.label)+'</strong></div>'
+    +'<div><span>进度</span><strong>'+(progress==null?"—":esc(progress+"%"))+'</strong></div>'
+    +'<div><span>revision</span><strong>'+esc(row.revision==null?"—":row.revision)+'</strong></div>'
+    +'<div><span>模式</span><strong>'+esc(row.refresh_mode==="legacy_passive"?"被动":"主动")+'</strong></div>'
+    +'</div>'
+    +'<p class="b3-personal-source">状态时间：'+esc(formatDateTime(row.last_report_at))
+    +' · 观察时间：'+esc(formatDateTime(row.last_observed_at))
+    +(snapshotReadAt?' · 页面读取：'+esc(formatDateTime(new Date(snapshotReadAt).toISOString())):'')
+    +'</p></section>';
+
+  const body='<article class="b3-task-card"><div class="b3-task-head"><div>'
+    +'<span class="b3-task-id">'+esc(task.kind==="current"?"CURRENT":"LAST")+'</span>'
+    +'<h4>'+esc(task.title)+'</h4></div>'
+    +'<div class="b3-task-state"><span class="b3-pill '+(activity.sec==="blocked"?"b3-p-blocked":activity.sec==="doing"?"b3-p-doing":"b3-p-wait")+'">'
+    +esc(activity.label)+'</span></div></div>'
+    +'<div class="b3-keyfacts">'
+    +'<div class="b3-keyfact result"><span>状态说明</span><p>'+esc(task.detail)+'</p></div>'
+    +(row.last_blocker?'<div class="b3-keyfact blocked"><span>阻塞原因</span><p>'+esc(row.last_blocker)+'</p></div>':'')
+    +'<div class="b3-keyfact evidence"><span>状态来源</span><p>'+esc(controlMode(row))
+    +(row.report_source?' · '+esc(row.report_source):'')+'</p></div>'
+    +'</div></article>';
+
+  return hero+body
+    +'<p class="b3-caption">这是当前状态投影，不是个人完整任务清单；正式工程交付仍以 GitHub/CI 等证据为准。</p>';
+}
+
 return {
   V1_SCHEMA, SECTIONS, SECTION_LABEL,
   esc, safeUrl,
   parseTaskDetail, validateV1,
-  renderOverview, renderPersonal
+  renderOverview, renderPersonal,
+  renderControlOverview, renderControlPersonal
 };
 })();
 if(typeof module !== "undefined" && module.exports) module.exports = BoardConsumer;
