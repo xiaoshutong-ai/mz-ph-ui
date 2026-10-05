@@ -447,6 +447,57 @@ function renderPersonal(id,name,row,snapshotReadAt){
 
 /* ---- 六席状态控制面 v2：当前投影，不伪造任务历史 ---- */
 
+const CONTROL_ACTIVITY_KEYS=new Set(["unknown","idle","busy","blocked","unavailable"]);
+const CONTROL_FRESHNESS_KEYS=new Set(["never","stale","fresh"]);
+const CONTROL_ADAPTER_KEYS=new Set(["muse","dot"]);
+const CONTROL_REFRESH_KEYS=new Set(["active","legacy_passive"]);
+
+function validateControlRows(value,seatNames){
+  if(!Array.isArray(value)||value.length>6) bad("control rows 非法");
+  const allowed=new Set(Object.keys(seatNames||{})),seen=new Set();
+  return value.map((row,index)=>{
+    const at="control["+index+"]";
+    if(!row||typeof row!=="object"||Array.isArray(row)) bad(at+" 必须为对象");
+    const id=String(row.agent_id||row.id||"");
+    if(!allowed.has(id)||seen.has(id)) bad(at+" 席位非法或重复");
+    seen.add(id);
+    const activity=String(row.activity_state||"");
+    const freshnessValue=String(row.freshness||"");
+    const observerFreshness=String(row.observer_freshness||"");
+    const adapter=String(row.adapter_type||"");
+    const refresh=String(row.refresh_mode||"");
+    if(!CONTROL_ACTIVITY_KEYS.has(activity)) bad(at+" activity_state 非法");
+    if(!CONTROL_FRESHNESS_KEYS.has(freshnessValue)) bad(at+" freshness 非法");
+    if(!CONTROL_FRESHNESS_KEYS.has(observerFreshness)) bad(at+" observer_freshness 非法");
+    if(!CONTROL_ADAPTER_KEYS.has(adapter)) bad(at+" adapter_type 非法");
+    if(!CONTROL_REFRESH_KEYS.has(refresh)) bad(at+" refresh_mode 非法");
+    const result={
+      id,
+      display_name:String(row.display_name||seatNames[id]||id),
+      activity_state:activity,
+      freshness:freshnessValue,
+      observer_freshness:observerFreshness,
+      adapter_type:adapter,
+      refresh_mode:refresh,
+      revision:Number.isInteger(row.revision)&&row.revision>=0?row.revision:0,
+      current_progress:row.current_progress==null?null:Number(row.current_progress)
+    };
+    for(const [key,max] of [
+      ["display_name",32],["current_task_title",200],["current_task_detail",4000],
+      ["last_task_title",200],["last_task_detail",4000],["last_blocker",1000],
+      ["last_report_at",80],["last_observed_at",80],["report_source",32]
+    ]){
+      if(row[key]!=null&&(typeof row[key]!=="string"||row[key].length>max))bad(at+" "+key+" 非法");
+      result[key]=row[key]||"";
+    }
+    if(result.current_progress!=null&&(
+      !Number.isInteger(result.current_progress)||result.current_progress<0||result.current_progress>100
+    ))bad(at+" current_progress 非法");
+    return result;
+  });
+}
+
+
 const CONTROL_ACTIVITY = {
   busy:{label:"工作中",sec:"doing"},
   blocked:{label:"受阻",sec:"blocked"},
@@ -595,7 +646,7 @@ function renderControlPersonal(id,name,row,snapshotReadAt){
 return {
   V1_SCHEMA, SECTIONS, SECTION_LABEL,
   esc, safeUrl,
-  parseTaskDetail, validateV1,
+  parseTaskDetail, validateV1, validateControlRows,
   renderOverview, renderPersonal,
   renderControlOverview, renderControlPersonal
 };
