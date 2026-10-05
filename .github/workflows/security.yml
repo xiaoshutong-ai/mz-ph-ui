@@ -14,6 +14,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Admit organization-member pull requests only
+        if: github.event_name == 'pull_request_target'
+        shell: bash
+        env:
+          PR_AUTHOR_ASSOCIATION: ${{ github.event.pull_request.author_association }}
+        run: |
+          set -euo pipefail
+          case "$PR_AUTHOR_ASSOCIATION" in
+            MEMBER|OWNER)
+              echo "ORGANIZATION_MEMBER_PR=PASS"
+              ;;
+            *)
+              echo "::error::External pull requests are not accepted by policy (author_association=$PR_AUTHOR_ASSOCIATION)."
+              exit 1
+              ;;
+          esac
+
       - name: Checkout main push
         if: github.event_name == 'push'
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -243,6 +260,15 @@ jobs:
               raise SystemExit("both security checkouts must disable credential persistence")
           if "permissions:\n  contents: read" not in security_workflow:
               raise SystemExit("security workflow permissions must remain read-only")
+          member_gate_markers = (
+              "Admit organization-member pull requests only",
+              "PR_AUTHOR_ASSOCIATION:",
+              "MEMBER|OWNER)",
+              "External pull requests are not accepted by policy",
+          )
+          for marker in member_gate_markers:
+              if marker not in security_workflow:
+                  raise SystemExit("organization-member PR admission gate missing: " + marker)
           security_uses = {
               line.strip() for line in security_workflow.splitlines()
               if line.strip().startswith("uses:")
