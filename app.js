@@ -1383,14 +1383,14 @@ function stewardSafeEvidence(value){
 function stewardSafeRunUrl(value){
   const runId=String(value||"");
   return /^\d+$/.test(runId)
-    ?"https://github.com/EmilioJI/dev-steward/actions/runs/"+runId
+    ?"https://github.com/xiaoshutong-ai/dev-steward/actions/runs/"+runId
     :"";
 }
 
 function stewardSafeCommitUrl(value){
   const sha=String(value||"");
   return /^[0-9a-f]{40}$/i.test(sha)
-    ?"https://github.com/EmilioJI/dev-steward/commit/"+sha
+    ?"https://github.com/xiaoshutong-ai/dev-steward/commit/"+sha
     :"";
 }
 
