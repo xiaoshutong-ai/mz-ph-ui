@@ -874,7 +874,10 @@ jobs:
               'entitlement_save',
               'daily_call_limit',
               'XST_*',
-              'Judge / Reply / Vision 已独立建模',
+              'function jevRuntimeSpecs()',
+              'judge_provider',
+              'reply_base_url',
+              'vision_base_url',
           ):
               if marker not in app:
                   raise SystemExit("multi-project isolation contract missing: " + marker)
