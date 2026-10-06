@@ -104,6 +104,27 @@ jobs:
           entry_js = Path("entry.js").read_text(encoding="utf-8")
           account_js = Path("account.js").read_text(encoding="utf-8")
           app = Path("app.js").read_text(encoding="utf-8")
+          integration_start = app.find("function projectIntegrationMessage(project){")
+          integration_end = app.find("\n}\n\nfunction runtimeField", integration_start)
+          if integration_start < 0 or integration_end <= integration_start:
+              raise SystemExit("project integration projection boundary missing")
+          integration_block = app[integration_start:integration_end]
+          for forbidden_project_key in (
+              'if(key==="mengzheng")',
+              'if(key==="xiaoshutong")',
+              'if(key==="fuzipartner")',
+              'if(key==="jev-chat-jarvis")',
+              'if(key==="dev-steward")',
+          ):
+              if forbidden_project_key in integration_block:
+                  raise SystemExit("public shell must not hard-code project status: " + forbidden_project_key)
+          for required_projection_marker in (
+              "status_source",
+              "项目仓、CI、运行态与发布证据",
+              "不在公开壳内维护项目事实",
+          ):
+              if required_projection_marker not in integration_block:
+                  raise SystemExit("generic project status projection contract missing: " + required_projection_marker)
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
           style = Path("style.css").read_text(encoding="utf-8")
@@ -409,7 +430,7 @@ jobs:
                   if item.get("mirror_contract") != ".github/workflows/public-mirror-contract.yml":
                       raise SystemExit("project fragment mirror contract path drifted")
                   seen_fragment_owners[key] = set(paths)
-              if seen_fragment_owners not in (expected_fragment_owners, target_fragment_owners):
+              if seen_fragment_owners != target_fragment_owners:
                   raise SystemExit("project fragment ownership map drifted")
 
               mixed_by_path = {
@@ -418,17 +439,11 @@ jobs:
               app_project_contributors = set(
                   mixed_by_path.get("app.js", {}).get("project_contributors", [])
               )
-              if app_project_contributors not in (
-                  {
-                      "xiaoshutong-ai/xiaoshutong-Mengzheng",
-                      "xiaoshutong-ai/xiaoshutong-shuyuan",
-                  },
-                  {
-                      "xiaoshutong-ai/jev-chat-jarvis",
-                      "xiaoshutong-ai/xiaoshutong-Mengzheng",
-                      "xiaoshutong-ai/xiaoshutong-shuyuan",
-                  },
-              ):
+              if app_project_contributors != {
+                  "xiaoshutong-ai/jev-chat-jarvis",
+                  "xiaoshutong-ai/xiaoshutong-Mengzheng",
+                  "xiaoshutong-ai/xiaoshutong-shuyuan",
+              }:
                   raise SystemExit("app.js project contributor boundary drifted")
               if set(mixed_by_path.get("workspace.html", {}).get("project_contributors", [])) != {
                   "xiaoshutong-ai/xiaoshutong-Mengzheng",
