@@ -450,6 +450,12 @@ function renderProjectEvidence(evidence){
   const runs=Array.isArray(target?.runs)?target.runs:[];
   const findings=Array.isArray(e.findings)?e.findings:[];
   const daily=e.daily_progress&&typeof e.daily_progress==="object"?e.daily_progress:null;
+  const dailyDate=/^\d{4}-\d{2}-\d{2}$/.test(String(daily?.evidence_local_date||""))
+    ?String(daily.evidence_local_date):"";
+  const dailyCoverage=String(daily?.evidence_coverage||"");
+  const dailyWindowStart=String(daily?.evidence_window_start||"");
+  const dailyWindowEnd=String(daily?.evidence_window_end||"");
+  const dailySourceGeneratedAt=String(daily?.evidence_source_generated_at||"");
   const goal=target?.goal_hub&&typeof target.goal_hub==="object"?target.goal_hub:null;
 
   let html='<div class="sr-project-grid">';
@@ -505,7 +511,18 @@ function renderProjectEvidence(evidence){
   }else html+='<div class="sr-project-empty">当前快照没有水墨书院项目级巡检发现。</div>';
   html+='</div></section>';
 
-  html+='<section class="sr-project-section"><h3>事实时间线</h3><p>只按 Dev Steward 的 previous-day GitHub activity 展示；没有数据就保持未知。</p><div class="sr-project-list">';
+  const dailyHeading=dailyDate?"事实时间线 · "+dailyDate:"事实时间线";
+  html+='<section class="sr-project-section"><h3>'+esc(dailyHeading)+'</h3><p>只按 Dev Steward 的北京时间上一自然日 GitHub activity 展示；当天摘要缺失时保持未知，绝不复用更老摘要。</p>';
+  if(daily){
+    const dailyMeta=[];
+    if(dailyCoverage) dailyMeta.push("覆盖："+dailyCoverage);
+    if(dailyWindowStart&&dailyWindowEnd){
+      dailyMeta.push("窗口："+srProjectTime(dailyWindowStart)+" → "+srProjectTime(dailyWindowEnd));
+    }
+    if(dailySourceGeneratedAt) dailyMeta.push("来源快照："+srProjectTime(dailySourceGeneratedAt));
+    html+='<div class="sr-project-empty">'+esc(dailyMeta.length?dailyMeta.join(" · "):"摘要来源元数据尚未同步；按旧合同展示，不推断日期。")+'</div>';
+  }
+  html+='<div class="sr-project-list">';
   if(daily){
     const commits=Array.isArray(daily.commits)?daily.commits:[];
     const prs=Array.isArray(daily.prs?.items)?daily.prs.items:[];
