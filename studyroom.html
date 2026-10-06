@@ -462,6 +462,8 @@ function renderProjectOverviewHealth(evidence){
     ?e.status_snapshot.project_plan:null;
   const plan=srProjectPlan({project_plan:targetPlan||legacyPlan});
   const planStats=plan?srProjectPlanStats(plan):null;
+  const planProblem=Array.isArray(target?.limitations)&&target.limitations.includes("PROJECT_PLAN_INVALID")
+    ?"PROJECT_PLAN_INVALID":"";
   const blocked=planStats?planStats.milestoneBlocked+planStats.acceptanceBlocked:null;
   const gateText=!/^[0-9a-f]{40}$/i.test(commit)
     ?"当前 head 尚未同步"
@@ -479,10 +481,12 @@ function renderProjectOverviewHealth(evidence){
     +'<div class="sr-project-card"><h3>运维 Gate</h3><strong>'+esc(gateText)+'</strong>'
       +'<small>只把 exact head 的 run 计入当前 Gate。</small></div>'
     +'<div class="sr-project-card"><h3>明确受阻</h3><strong>'
-      +esc(blocked==null?"计划尚未同步":(blocked+" 项"))
+      +esc(blocked==null?(planProblem?"计划读取异常":"计划尚未同步"):(blocked+" 项"))
       +'</strong><small>'+esc(planStats&&planStats.attention.length
         ?planStats.attention.slice(0,2).join(" · ")
-        :"没有项目仓显式 blocked 项，或计划尚未同步。")+'</small></div>'
+        :planProblem
+          ?"项目仓已有 canonical 计划，但最新巡检未通过解析；这不等于项目没有计划。"
+          :"没有项目仓显式 blocked 项，或计划尚未同步。")+'</small></div>'
     +'<div class="sr-project-card"><h3>证据采集</h3><strong>'+esc(coverage)+'</strong>'
       +'<small>'+esc("最近采集："+generated)+'</small></div>';
   meta.textContent=srProjectCoverageText(e.steward,target);
@@ -512,11 +516,16 @@ function srProjectPlanStats(plan){
     attention
   };
 }
-function srProjectPlanHtml(snapshot){
+function srProjectPlanHtml(snapshot,problem=""){
   const plan=srProjectPlan(snapshot);
   if(!plan){
-    return '<div class="sr-project-gantt-empty"><strong>计划数据尚未同步</strong><br>'
-      +'target.project_plan / 兼容 status_snapshot.project_plan 尚未提供 schema v1。平台不会根据 commits、merged PR、CI 次数或当前日期推断阶段、AC 完成率、开始日或截止日。</div>';
+    const upstream=String(problem||"")==="PROJECT_PLAN_INVALID";
+    return '<div class="sr-project-gantt-empty"><strong>'
+      +(upstream?"计划源读取异常":"计划数据尚未同步")+'</strong><br>'
+      +(upstream
+        ?"项目仓已有 canonical ops/project-plan.json，但最新 Dev Steward 快照标记为 PROJECT_PLAN_INVALID。平台不会把上游解析失败误报为“项目没有计划”，也不会据此推断阶段、完成率或日期。"
+        :"target.project_plan / 兼容 status_snapshot.project_plan 尚未提供 schema v1。平台不会根据 commits、merged PR、CI 次数或当前日期推断阶段、AC 完成率、开始日或截止日。")
+      +'</div>';
   }
 
   const blocks=[];
@@ -717,17 +726,21 @@ function renderProjectEvidence(evidence){
   const legacyPlan=e.status_snapshot?.project_plan&&typeof e.status_snapshot.project_plan==="object"&&!Array.isArray(e.status_snapshot.project_plan)
     ?e.status_snapshot.project_plan:null;
   const planProjection={project_plan:targetPlan||legacyPlan};
+  const planProblem=Array.isArray(target?.limitations)&&target.limitations.includes("PROJECT_PLAN_INVALID")
+    ?"PROJECT_PLAN_INVALID":"";
   const planSource=targetPlan
     ?"项目仓 ops/project-plan.json · Dev Steward pinned evidence"
     :legacyPlan
       ?"兼容旧 status_snapshot.project_plan（仅在项目仓计划未同步时使用）"
-      :"尚未同步";
+      :planProblem
+        ?"项目仓计划存在，但 Dev Steward 最新快照未通过计划解析（PROJECT_PLAN_INVALID）"
+        :"尚未同步";
   const planSourceUrl=String(target?.project_plan_source?.url||"");
   html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>优先消费 target.project_plan（项目仓 pinned evidence）；旧 status_snapshot.project_plan 仅作过渡 fallback。没有批准日期就不画甘特，不从 GitHub 活动反推完成度。</p>';
   html+='<div class="sr-project-item-meta">计划来源：'
     +(planSourceUrl&&/^https:\/\/github\.com\//.test(planSourceUrl)?srProjectLink(planSource,planSourceUrl):esc(planSource))
     +'</div>';
-  html+=srProjectPlanHtml(planProjection)+'</section>';
+  html+=srProjectPlanHtml(planProjection,planProblem)+'</section>';
 
   document.getElementById("srProjectEvidence").innerHTML=html;
   document.getElementById("srProjectState").textContent=
