@@ -234,7 +234,8 @@ jobs:
           if not provenance_path.exists():
               raise SystemExit("public artifact provenance manifest is required")
           provenance = _provenance_json.loads(provenance_path.read_text(encoding="utf-8"))
-          if provenance.get("schema_version") != 1 or provenance.get("policy") != "project-facts-follow-project":
+          schema_version = provenance.get("schema_version")
+          if schema_version not in {1, 2} or provenance.get("policy") != "project-facts-follow-project":
               raise SystemExit("public artifact provenance identity mismatch")
           artifacts = provenance.get("artifacts")
           if not isinstance(artifacts, list) or len(artifacts) < 2:
@@ -245,6 +246,19 @@ jobs:
               },
               ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
                   "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
+              },
+          }
+          target_expected_provenance = {
+              ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
+                  "studyroom.html", "board-consumer.js", "devices.html",
+                  "assets/characters/bi.png", "assets/characters/mo.png", "assets/characters/zhi.png",
+                  "assets/characters/yan.png", "assets/characters/juan.png", "assets/characters/xia.png"
+              },
+              ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
+                  "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
+              },
+              ("xiaoshutong-ai/xiaoshutong-Mengzheng", "ops/public-web"): {
+                  "index.html", "account.html", "account.js"
               },
           }
           seen_provenance = {}
@@ -258,8 +272,19 @@ jobs:
               seen_provenance[key] = set(paths)
               if item.get("publication_mode") not in {"mirror", "generated"}:
                   raise SystemExit("public artifact provenance publication mode invalid")
-          if seen_provenance != expected_provenance:
-              raise SystemExit("public artifact provenance paths drifted from approved project ownership")
+          if schema_version == 1:
+              if seen_provenance != expected_provenance:
+                  raise SystemExit("legacy public artifact provenance paths drifted")
+              if provenance.get("mixed_files") not in (None, []):
+                  raise SystemExit("legacy provenance may not declare mixed files")
+          else:
+              if seen_provenance != target_expected_provenance:
+                  raise SystemExit("v2 public artifact provenance paths drifted")
+              mixed_files = provenance.get("mixed_files")
+              if not isinstance(mixed_files, list):
+                  raise SystemExit("v2 provenance mixed_files must be a list")
+              if {item.get("path") for item in mixed_files if isinstance(item, dict)} != {"app.js", "workspace.html", "style.css"}:
+                  raise SystemExit("v2 mixed-file provenance paths drifted")
 
           repo_text_parts = []
           for rel, path in tracked:
