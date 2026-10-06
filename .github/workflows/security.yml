@@ -206,7 +206,7 @@ jobs:
               ".nojekyll",
               "README.md",
               "SECURITY.md",
-              "AGENTS.md", "studyroom.html",
+              "AGENTS.md", "studyroom.html", "PUBLIC_ARTIFACT_PROVENANCE.json",
               "index.html",
               "workspace.html",
               "account.html",
