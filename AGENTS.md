@@ -50,7 +50,7 @@ The objective is complete only when its mandatory acceptance criteria pass or an
 ## Fresh-session Project Agent continuity
 
 - Project GPT is the default technical executor for this public shell.
-- Recovery order: `AGENTS.md` -> `README.md` -> `PROJECT_STATE.md` -> provenance/public-artifact metadata -> live GitHub branch/PR/head/CI/Pages evidence.
+- Recovery order: `AGENTS.md` -> `README.md` -> provenance/public-artifact metadata -> live GitHub branch/PR/head/CI/Pages evidence.
 - Project-specific source and product facts remain owned by their canonical private repositories; do not turn this mirror into a competing authority.
 - Check for an existing writer/PR before changing a public mirror.
-- A continuity snapshot never proves Pages deployment or end-to-end behavior.
+- This public mirror intentionally does not add a separate `PROJECT_STATE.md`; current-state recovery comes from existing public metadata/provenance plus live GitHub/CI/Pages evidence. A documentation snapshot never proves Pages deployment or end-to-end behavior.
