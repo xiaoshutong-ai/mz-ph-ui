@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "policy": "project-facts-follow-project",
+  "artifacts": [
+    {
+      "public_paths": [
+        "studyroom.html",
+        "board-consumer.js"
+      ],
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
+      "canonical_root": "ops/public-web",
+      "publication_mode": "mirror",
+      "migration_state": "canonical-source-established",
+      "imported_from_public_commit": "65a3fa9b60bf4702ca012fe50ed9b4d53903aa9f",
+      "canonical_commit": "f718eb111beec711932fd80ad8f07761a193e4f2",
+      "canonical_paths": [
+        "ops/public-web/studyroom.html",
+        "ops/public-web/board-consumer.js",
+        "ops/public-web/studyroom-board.css"
+      ]
+    },
+    {
+      "public_paths": [
+        "updates/fuzi/latest.json",
+        "updates/fuzi/v2/policy.json"
+      ],
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-fuzipartner",
+      "canonical_root": "ops/public-distribution",
+      "publication_mode": "mirror",
+      "migration_state": "canonical-source-established",
+      "imported_from_public_commit": "65a3fa9b60bf4702ca012fe50ed9b4d53903aa9f",
+      "canonical_commit": "154ee7b6f8d67984f8b1881226cee6457ee26df6",
+      "canonical_paths": [
+        "ops/public-distribution/latest.json",
+        "ops/public-distribution/v2/policy.json"
+      ]
+    }
+  ]
+}

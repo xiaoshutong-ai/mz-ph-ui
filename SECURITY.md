@@ -28,6 +28,13 @@ The Supabase project URL and `sb_publishable_*` browser key are public client co
 
 ## Server-side source boundary
 
-The deployed Operations Hub Edge Function source is canonical in the private `EmilioJI/xiaoshutong-Mengzheng` repository. Server-side Supabase function source is forbidden in this public repository.
+The deployed Operations Hub Edge Function source is canonical in the private `xiaoshutong-ai/xiaoshutong-Mengzheng` repository. Server-side Supabase function source is forbidden in this public repository.
 
 This repository may expose only browser-delivered static client code and explicitly approved public update metadata. Server-side authorization, Vault/RPC implementation, private migrations, service-role logic, and private application code must remain private.
+
+
+## Project-artifact provenance boundary
+
+Project-specific public files in this repository are distribution mirrors or generated artifacts, never the project source of truth. Their canonical private sources are declared in `PUBLIC_ARTIFACT_PROVENANCE.json`.
+
+A project-specific operational fact, release policy, project UI implementation, timeline, status producer, or backend implementation must be authored in the owning private project repository first. The public shell may only publish the reviewed public projection needed by browsers or update clients.
