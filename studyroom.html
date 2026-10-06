@@ -120,7 +120,7 @@
 <p>六位住户的身心安放之所 · 设备与状态一目了然</p>
 </div>
 <div class="steward-header-controls">
-<button class="sr-btn" type="button" onclick="refreshAll(true)">刷新</button>
+<button class="sr-btn" type="button" onclick="refreshAll();loadProjectEvidence(true)">刷新</button>
 </div>
 </header>
 
@@ -1268,12 +1268,11 @@ function ensureSrAgentTimer(){
   },3600000);
 }
 
-function refreshAll(forceProjectEvidence=false){
+function refreshAll(){
   loadOverview();
   loadDevices();
   loadPresetCodes();
   loadAgents();
-  loadProjectEvidence(!!forceProjectEvidence);
   ensureSrAgentTimer();
 }
 
@@ -1284,6 +1283,7 @@ function refreshAll(forceProjectEvidence=false){
     }else{
       document.getElementById("srApp").style.display = "";
       refreshAll();
+      loadProjectEvidence(false);
     }
   });
 })();
