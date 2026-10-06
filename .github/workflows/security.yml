@@ -56,12 +56,45 @@ jobs:
 
       - name: Verify public frontend boundary
         shell: bash
+        env:
+          GH_RELEASE_READ_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
           import hashlib
+          import os
           import re
+          import time
+          import urllib.error
+          import urllib.request
+
+          def fetch_github_json(api_url, unavailable_message):
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "mz-ph-ui-public-security-gate",
+                  "X-GitHub-Api-Version": "2022-11-28",
+              }
+              token = os.environ.get("GH_RELEASE_READ_TOKEN", "").strip()
+              if not token:
+                  raise SystemExit("trusted GitHub Release read token is unavailable")
+              headers["Authorization"] = "Bearer " + token
+              last_error = None
+              for attempt in range(3):
+                  request = urllib.request.Request(api_url, headers=headers)
+                  try:
+                      with urllib.request.urlopen(request, timeout=10) as response:
+                          import json as _json
+                          return _json.load(response)
+                  except urllib.error.HTTPError as error:
+                      last_error = error
+                      if error.code not in {429, 500, 502, 503, 504}:
+                          break
+                  except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                      last_error = error
+                  if attempt < 2:
+                      time.sleep(1 + attempt)
+              raise SystemExit(unavailable_message) from last_error
 
           files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("board-consumer.js"), Path("README.md"), Path("SECURITY.md")]
           text = "\n".join(p.read_text(encoding="utf-8") for p in files if p.exists())
@@ -351,6 +384,10 @@ jobs:
           }
           if security_uses != expected_security_uses:
               raise SystemExit("security workflow actions must stay pinned to the approved SHA")
+          trusted_release_token_marker = "GH_RELEASE_READ_TOKEN: $" + "{{ github" + ".token }}"
+          if security_workflow.count(trusted_release_token_marker) != 1:
+              raise SystemExit("trusted Release metadata token must be step-scoped exactly once")
+          security_workflow_for_privileged_scan = security_workflow.replace(trusted_release_token_marker, "")
           privileged_markers = (
               "secrets" + ".",
               "github" + ".token",
@@ -358,7 +395,7 @@ jobs:
               "toJSON" + "(github)",
           )
           for forbidden in privileged_markers:
-              if forbidden in security_workflow:
+              if forbidden in security_workflow_for_privileged_scan:
                   raise SystemExit("security workflow may not expose privileged GitHub context: " + forbidden)
 
           pages = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
@@ -452,26 +489,16 @@ jobs:
                       raise SystemExit("Fuzi APK SHA-256 invalid")
                   if not isinstance(size, int) or size <= 0 or size > 100 * 1024 * 1024:
                       raise SystemExit("Fuzi APK size violates release limit")
-                  import urllib.request
                   tag = "fuzi-v" + str(value["latest_version_name"])
                   asset_name = "FuziPartner-v" + str(value["latest_version_name"]) + ".apk"
                   api_url = (
                       "https://api.github.com/repos/xiaoshutong-ai/mz-ph-ui/releases/tags/"
                       + tag
                   )
-                  request = urllib.request.Request(
+                  release = fetch_github_json(
                       api_url,
-                      headers={
-                          "Accept": "application/vnd.github+json",
-                          "User-Agent": "mz-ph-ui-public-security-gate",
-                          "X-GitHub-Api-Version": "2022-11-28",
-                      },
+                      "approved Fuzi Release metadata is unavailable",
                   )
-                  try:
-                      with urllib.request.urlopen(request, timeout=10) as response:
-                          release = json.load(response)
-                  except Exception as error:
-                      raise SystemExit("approved Fuzi Release metadata is unavailable") from error
 
                   if release.get("draft") or release.get("prerelease"):
                       raise SystemExit("Fuzi stable manifest may not reference draft/prerelease")
@@ -494,7 +521,6 @@ jobs:
               raise SystemExit("Fuzi v2 update policy is required")
 
           import json
-          import urllib.request
           from urllib.parse import urlparse
 
           policy = json.loads(update_policy_v2.read_text(encoding="utf-8"))
@@ -558,19 +584,10 @@ jobs:
               "https://api.github.com/repos/xiaoshutong-ai/mz-ph-ui/releases/tags/"
               + policy_tag
           )
-          policy_request = urllib.request.Request(
+          policy_release = fetch_github_json(
               policy_api_url,
-              headers={
-                  "Accept": "application/vnd.github+json",
-                  "User-Agent": "mz-ph-ui-public-security-gate",
-                  "X-GitHub-Api-Version": "2022-11-28",
-              },
+              "approved Fuzi v2 Release metadata is unavailable",
           )
-          try:
-              with urllib.request.urlopen(policy_request, timeout=10) as response:
-                  policy_release = json.load(response)
-          except Exception as error:
-              raise SystemExit("approved Fuzi v2 Release metadata is unavailable") from error
 
           if policy_release.get("draft") or policy_release.get("prerelease"):
               raise SystemExit("Fuzi v2 stable policy may not reference draft/prerelease")
