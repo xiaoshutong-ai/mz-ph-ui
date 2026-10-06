@@ -35,6 +35,33 @@
 .sr-table .sr-small-input{min-width:150px;}
 .sr-chat-note{padding:10px 12px;background:#f8f3e8;border:1px solid #eadfc9;border-radius:8px;color:#6b5c48;font-size:13px;}
 #srLoginGate{text-align:center;padding:80px 20px;}
+.sr-project-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding:18px 20px;border:1px solid #e2d8c7;border-radius:14px;background:linear-gradient(145deg,#fffdf9,#f7f0e3);}
+.sr-project-hero h2{margin:4px 0 6px;font-size:24px;color:#2a2118;}
+.sr-project-hero p{margin:0;color:#75644f;line-height:1.65;max-width:760px;}
+.sr-project-state{margin:12px 0 16px;padding:10px 12px;border:1px solid #eadfc9;border-radius:9px;background:#fbf7ef;color:#6f5f4c;font-size:13px;}
+.sr-project-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:14px 0;}
+.sr-project-card{background:#fff;border:1px solid #e7dece;border-radius:12px;padding:14px 16px;min-width:0;}
+.sr-project-card h3{margin:0 0 10px;font-size:14px;color:#5e4c38;}
+.sr-project-card strong{display:block;color:#241c15;font-size:16px;line-height:1.45;overflow-wrap:anywhere;}
+.sr-project-card small{display:block;margin-top:5px;color:#8a7b66;line-height:1.5;}
+.sr-project-section{margin-top:16px;background:#fff;border:1px solid #e7dece;border-radius:12px;padding:16px;}
+.sr-project-section h3{margin:0 0 4px;color:#33271c;font-size:17px;}
+.sr-project-section>p{margin:0 0 12px;color:#84735f;font-size:13px;line-height:1.6;}
+.sr-project-list{display:grid;gap:8px;}
+.sr-project-item{padding:10px 12px;border:1px solid #eee5d7;border-radius:9px;background:#fcfaf6;line-height:1.55;}
+.sr-project-item-head{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+.sr-project-item-title{font-weight:650;color:#31261d;overflow-wrap:anywhere;}
+.sr-project-item-meta{color:#8a7b66;font-size:12px;}
+.sr-project-pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#efe8dc;color:#6a5945;font-size:11px;white-space:nowrap;}
+.sr-project-pill.ok{background:#e6f4ea;color:#1a7f37;}
+.sr-project-pill.bad{background:#fee2e2;color:#991b1b;}
+.sr-project-pill.warn{background:#fef3c7;color:#92400e;}
+.sr-project-pill.info{background:#e8eef8;color:#38598a;}
+.sr-project-link{color:#76533a;text-decoration:none;border-bottom:1px dotted #b99d80;}
+.sr-project-link:hover{color:#a0332b;}
+.sr-project-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;}
+.sr-project-empty{padding:14px;border:1px dashed #d8c9b3;border-radius:10px;background:#faf7f1;color:#7b6a56;line-height:1.65;}
+.sr-project-gantt-empty{padding:18px;border-radius:10px;background:repeating-linear-gradient(135deg,#faf7f0,#faf7f0 10px,#f5efe5 10px,#f5efe5 20px);border:1px solid #e6dccb;color:#6f604d;line-height:1.7;}
 </style>
 </head>
 <body class="steward-focus-mode">
@@ -58,6 +85,7 @@
 <button class="steward-side-nav-btn" type="button" data-sr="srCodes">预设录取码</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srChat">六席对话</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srAgents">实时看板</button>
+<button class="steward-side-nav-btn" type="button" data-sr="srProject">项目事实</button>
 </nav>
 <div class="steward-side-motto">
 <strong>笔墨纸砚 · 卷匣同心</strong>
@@ -171,6 +199,22 @@
 </section>
 </div>
 
+<!-- 项目事实 / GitHub 证据 -->
+<div id="srProject" class="sr-section">
+  <section class="sr-project-hero" aria-labelledby="srProjectTitle">
+    <div>
+      <span class="sr-board-kicker">工程证据</span>
+      <h2 id="srProjectTitle">水墨书院 · 项目事实</h2>
+      <p>这里只展示项目仓、CI 与 Dev Steward 已实际采集的证据。GitHub 活动不自动等于里程碑完成，未同步的数据保持未知。</p>
+    </div>
+    <button id="srProjectRefresh" class="sr-btn" type="button">刷新证据</button>
+  </section>
+  <div id="srProjectState" class="sr-project-state" role="status" aria-live="polite">等待首次读取</div>
+  <div id="srProjectEvidence">
+    <div class="sr-project-empty">尚未读取项目证据。</div>
+  </div>
+</div>
+
 </div>
 </div>
 </section>
@@ -233,7 +277,165 @@ document.querySelectorAll("[data-sr]").forEach(b => b.addEventListener("click", 
   document.getElementById(b.dataset.sr).classList.add("active");
   if(b.dataset.sr==="srChat") loadStudyroomChatConfig();
   if(b.dataset.sr==="srAgents") loadAgents();
+  if(b.dataset.sr==="srProject") loadProjectEvidence();
 }));
+
+function srProjectTime(value){
+  const t=Date.parse(String(value||""));
+  return Number.isFinite(t)
+    ?new Date(t).toLocaleString("zh-CN",{hour12:false})
+    :"尚未同步";
+}
+function srProjectShortSha(value){
+  const sha=String(value||"").trim();
+  return /^[0-9a-f]{40}$/i.test(sha)?sha.slice(0,8):"尚未同步";
+}
+function srProjectGitHubUrl(repo,suffix){
+  const name=String(repo||"").trim();
+  if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)) return "";
+  const tail=String(suffix||"").replace(/^\/+/,"");
+  return "https://github.com/"+name+(tail?"/"+tail:"");
+}
+function srProjectLink(label,url,extraClass){
+  if(!url) return esc(label);
+  return '<a class="sr-project-link '+esc(extraClass||"")+'" href="'+esc(url)+'" target="_blank" rel="noopener noreferrer">'+esc(label)+'</a>';
+}
+function srProjectConclusion(value,status){
+  const conclusion=String(value||"").toLowerCase();
+  const state=String(status||"").toLowerCase();
+  if(conclusion==="success") return {label:"通过",kind:"ok"};
+  if(["failure","timed_out","startup_failure","action_required"].includes(conclusion)) return {label:"失败",kind:"bad"};
+  if(conclusion==="cancelled") return {label:"已取消",kind:"warn"};
+  if(conclusion==="skipped") return {label:"已跳过",kind:"info"};
+  if(state==="in_progress") return {label:"运行中",kind:"info"};
+  if(state==="queued") return {label:"排队",kind:"warn"};
+  return {label:conclusion||state||"未知",kind:""};
+}
+function srProjectCoverageText(steward,target){
+  const coverage=String(steward?.coverage||"NO_DATA");
+  const state=String(target?.state||"UNKNOWN");
+  const limits=Array.isArray(target?.limitations)?target.limitations:[];
+  if(state==="OBSERVED"&&!limits.length){
+    return coverage==="COMPLETE"
+      ?"本项目证据已完整采集。"
+      :"本项目 target 已 OBSERVED 且无本项目 limitation；portfolio 总体为 "+coverage+"，不等于本项目失败。";
+  }
+  if(!target) return "最新巡检尚未提供本项目 target；不回退为旧项目事实。";
+  return "本项目采集状态 "+state+(limits.length?" · 限制："+limits.join("、"):"");
+}
+function renderProjectEvidence(evidence){
+  const e=evidence&&typeof evidence==="object"?evidence:{};
+  const target=e.target&&typeof e.target==="object"?e.target:null;
+  const steward=e.steward&&typeof e.steward==="object"?e.steward:null;
+  const repo=String(e.repository_full_name||target?.repo||"");
+  const commit=String(target?.commit||"");
+  const branch=String(target?.ref||e.default_branch||"");
+  const repoUrl=srProjectGitHubUrl(repo,"");
+  const commitUrl=/^[0-9a-f]{40}$/i.test(commit)?srProjectGitHubUrl(repo,"commit/"+commit):"";
+  const sourceAge=steward?.generated_at?srProjectTime(steward.generated_at):"尚未同步";
+  const openPrs=Array.isArray(target?.open_prs)?target.open_prs:[];
+  const runs=Array.isArray(target?.runs)?target.runs:[];
+  const findings=Array.isArray(e.findings)?e.findings:[];
+  const daily=e.daily_progress&&typeof e.daily_progress==="object"?e.daily_progress:null;
+  const goal=target?.goal_hub&&typeof target.goal_hub==="object"?target.goal_hub:null;
+
+  let html='<div class="sr-project-grid">';
+  html+='<div class="sr-project-card"><h3>Canonical 仓库</h3><strong>'+srProjectLink(repo||"尚未同步",repoUrl)+'</strong><small>项目事实跟项目仓走；公开平台只做投影。</small></div>';
+  html+='<div class="sr-project-card"><h3>当前源码</h3><strong class="sr-project-mono">'+srProjectLink(srProjectShortSha(commit),commitUrl,"sr-project-mono")+'</strong><small>分支 '+esc(branch||"尚未同步")+' · '+esc(String(target?.state||"UNKNOWN"))+'</small></div>';
+  html+='<div class="sr-project-card"><h3>证据采集</h3><strong>'+esc(String(steward?.coverage||"尚未同步"))+'</strong><small>'+esc(sourceAge)+'</small></div>';
+  html+='<div class="sr-project-card"><h3>Goal / 里程碑源</h3>';
+  if(goal?.repo&&goal?.number){
+    const goalUrl=srProjectGitHubUrl(goal.repo,"issues/"+goal.number);
+    html+='<strong>'+srProjectLink("Goal #"+goal.number,goalUrl)+'</strong><small>状态：'+esc(goal.state||"未知")+'</small>';
+  }else{
+    html+='<strong>尚未同步</strong><small>不会根据 commits/PR 自动推断 Goal 或里程碑。</small>';
+  }
+  html+='</div></div>';
+
+  html+='<section class="sr-project-section"><h3>证据口径</h3><p>观察事实与工作事实分离；success 才算通过，skipped / cancelled 不算 PASS。</p>';
+  html+='<div class="sr-project-empty">'+esc(srProjectCoverageText(steward,target))+'</div></section>';
+
+  html+='<section class="sr-project-section"><h3>Open PR</h3><p>只显示最新 Dev Steward 快照中实际存在的开放 PR。</p><div class="sr-project-list">';
+  if(openPrs.length){
+    html+=openPrs.map(item=>{
+      const number=Number(item?.number);
+      const url=Number.isInteger(number)&&number>0?srProjectGitHubUrl(repo,"pull/"+number):"";
+      const head=String(item?.head||"?");
+      const base=String(item?.base||"?");
+      return '<div class="sr-project-item"><div class="sr-project-item-head"><span class="sr-project-item-title">'+srProjectLink("PR #"+(number||"?"),url)+'</span><span class="sr-project-pill info">OPEN</span></div><div class="sr-project-item-meta">'+esc(head)+' → '+esc(base)+'</div></div>';
+    }).join("");
+  }else html+='<div class="sr-project-empty">当前快照没有开放 PR。</div>';
+  html+='</div></section>';
+
+  html+='<section class="sr-project-section"><h3>最近 CI</h3><p>来自项目仓最近 workflow run；失败、跳过、取消按原始结论展示。</p><div class="sr-project-list">';
+  if(runs.length){
+    html+=runs.slice(0,12).map(item=>{
+      const runId=Number(item?.id);
+      const result=srProjectConclusion(item?.conclusion,item?.status);
+      const url=Number.isInteger(runId)&&runId>0?srProjectGitHubUrl(repo,"actions/runs/"+runId):"";
+      const name=String(item?.path||"workflow");
+      const head=srProjectShortSha(item?.head_sha);
+      return '<div class="sr-project-item"><div class="sr-project-item-head"><span class="sr-project-item-title">'+srProjectLink(name,url)+'</span><span class="sr-project-pill '+result.kind+'">'+esc(result.label)+'</span></div><div class="sr-project-item-meta">'+esc(item?.head_branch||"")+' · '+esc(head)+' · '+esc(srProjectTime(item?.created_at))+'</div></div>';
+    }).join("");
+  }else html+='<div class="sr-project-empty">当前结构化快照暂无 CI run 明细；这不代表没有 CI。</div>';
+  html+='</div></section>';
+
+  html+='<section class="sr-project-section"><h3>巡检发现</h3><p>只展示与水墨书院 canonical repo 精确匹配的 Dev Steward findings。</p><div class="sr-project-list">';
+  if(findings.length){
+    html+=findings.slice(0,20).map(item=>{
+      const sev=String(item?.severity||"?");
+      const kind=sev==="P0"||sev==="P1"?"bad":sev==="P2"?"warn":"";
+      const evidenceUrls=Array.isArray(item?.evidence)?item.evidence.filter(v=>/^https:\/\/github\.com\//.test(String(v||""))).slice(0,2):[];
+      const links=evidenceUrls.map((url,i)=>srProjectLink("证据 "+(i+1),url)).join(" · ");
+      return '<div class="sr-project-item"><div class="sr-project-item-head"><span class="sr-project-item-title">'+esc(item?.rule||"巡检发现")+'</span><span class="sr-project-pill '+kind+'">'+esc(sev)+'</span></div><div>'+esc(item?.message||"")+'</div>'+(links?'<div class="sr-project-item-meta">'+links+'</div>':'')+'</div>';
+    }).join("");
+  }else html+='<div class="sr-project-empty">当前快照没有水墨书院项目级巡检发现。</div>';
+  html+='</div></section>';
+
+  html+='<section class="sr-project-section"><h3>事实时间线</h3><p>只按 Dev Steward 的 previous-day GitHub activity 展示；没有数据就保持未知。</p><div class="sr-project-list">';
+  if(daily){
+    const commits=Array.isArray(daily.commits)?daily.commits:[];
+    const prs=Array.isArray(daily.prs?.items)?daily.prs.items:[];
+    const issues=Array.isArray(daily.issues?.items)?daily.issues.items:[];
+    const workflows=Array.isArray(daily.workflows?.items)?daily.workflows.items:[];
+    const items=[];
+    commits.forEach(v=>items.push({time:v.committed_at,title:v.message,kind:"commit",url:v.url||""}));
+    prs.forEach(v=>items.push({time:"",title:"PR "+(v.event||"")+" #"+(v.number||"?")+" · "+(v.title||""),kind:"pr",url:v.url||""}));
+    issues.forEach(v=>items.push({time:"",title:"Issue "+(v.event||"")+" #"+(v.number||"?")+" · "+(v.title||""),kind:"issue",url:v.url||""}));
+    workflows.forEach(v=>items.push({time:v.created_at,title:"CI "+(v.conclusion||v.status||"")+" · "+(v.path||"workflow"),kind:"ci",url:v.url||""}));
+    if(items.length){
+      html+=items.slice(0,20).map(item=>'<div class="sr-project-item"><div class="sr-project-item-head"><span class="sr-project-item-title">'+srProjectLink(item.title,item.url)+'</span><span class="sr-project-pill">'+esc(item.kind)+'</span></div>'+(item.time?'<div class="sr-project-item-meta">'+esc(srProjectTime(item.time))+'</div>':'')+'</div>').join("");
+    }else html+='<div class="sr-project-empty">该日没有被采集到的 GitHub 活动。</div>';
+  }else html+='<div class="sr-project-empty">昨日进展尚未同步到当前结构化快照。</div>';
+  html+='</div></section>';
+
+  html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>这里只消费项目仓显式计划，不从 GitHub 活动反推计划完成度。</p>';
+  html+='<div class="sr-project-gantt-empty"><strong>计划数据尚未同步</strong><br>当前 shared contract 还没有项目仓显式 milestone / start / end 数据。平台因此不显示虚构百分比、截止日期或“全部未开始”。</div></section>';
+
+  document.getElementById("srProjectEvidence").innerHTML=html;
+  document.getElementById("srProjectState").textContent=
+    (target?"已读取 "+repo+"@"+srProjectShortSha(commit):"项目证据尚未覆盖本仓")
+    +" · "+sourceAge;
+}
+let _srProjectLoading=false;
+async function loadProjectEvidence(){
+  if(_srProjectLoading) return;
+  _srProjectLoading=true;
+  const button=document.getElementById("srProjectRefresh");
+  if(button) button.disabled=true;
+  document.getElementById("srProjectState").textContent="正在读取项目仓 / CI / 巡检证据…";
+  try{
+    const value=await opsApi("project_evidence");
+    renderProjectEvidence(value.evidence);
+  }catch(e){
+    document.getElementById("srProjectEvidence").innerHTML='<div class="sr-project-empty">当前无法读取项目证据。不会回退显示旧 pilot snapshot。</div>';
+    document.getElementById("srProjectState").textContent="读取失败 · "+(e.message||e);
+  }finally{
+    _srProjectLoading=false;
+    if(button) button.disabled=false;
+  }
+}
+document.getElementById("srProjectRefresh").addEventListener("click",()=>loadProjectEvidence());
 
 // 总览
 async function loadOverview(){
