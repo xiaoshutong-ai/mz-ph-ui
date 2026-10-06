@@ -437,10 +437,42 @@ jobs:
           if pages.count(expected_pages_runner) != 2:
               raise SystemExit('both Pages jobs must stay on the dedicated mz-ph-ui self-hosted Linux runner')
 
+          import json
+          from urllib.parse import urlparse
+
+          def resolve_fuzi_release(download_url, version_name):
+              parsed = urlparse(download_url)
+              if parsed.scheme != "https" or parsed.netloc != "github.com":
+                  raise SystemExit("Fuzi APK download must use HTTPS github.com")
+              if parsed.query or parsed.fragment:
+                  raise SystemExit("Fuzi APK URL must not contain query or fragment")
+              legacy_paths = {
+                  "/EmilioJI/mz-ph-ui/releases/download/fuzi-v" + version_name + "/FuziPartner-v" + version_name + ".apk",
+                  "/xiaoshutong-ai/mz-ph-ui/releases/download/fuzi-v" + version_name + "/FuziPartner-v" + version_name + ".apk",
+              }
+              box_path = (
+                  "/xiaoshutong-ai/xiaoshutong-box/releases/download/fuzipartner-v"
+                  + version_name
+                  + "/fuzipartner-"
+                  + version_name
+                  + ".apk"
+              )
+              if parsed.path == box_path:
+                  return (
+                      "xiaoshutong-ai/xiaoshutong-box",
+                      "fuzipartner-v" + version_name,
+                      "fuzipartner-" + version_name + ".apk",
+                  )
+              if parsed.path in legacy_paths:
+                  return (
+                      "xiaoshutong-ai/mz-ph-ui",
+                      "fuzi-v" + version_name,
+                      "FuziPartner-v" + version_name + ".apk",
+                  )
+              raise SystemExit("Fuzi APK URL escaped approved release namespace")
+
           update_manifest = Path("updates/fuzi/latest.json")
           if update_manifest.exists():
-              import json
-              from urllib.parse import urlparse
               value = json.loads(update_manifest.read_text(encoding="utf-8"))
               expected_keys = {
                   "schema_version",
@@ -476,23 +508,18 @@ jobs:
                   if sha is not None or size is not None:
                       raise SystemExit("unpublished Fuzi manifest must not expose SHA/size")
               else:
-                  parsed = urlparse(url)
-                  if parsed.scheme != "https" or parsed.netloc != "github.com":
-                      raise SystemExit("Fuzi APK download must use HTTPS github.com")
-                  prefixes = (
-                      "/EmilioJI/mz-ph-ui/releases/download/fuzi-v",
-                      "/xiaoshutong-ai/mz-ph-ui/releases/download/fuzi-v",
+                  release_repo, tag, asset_name = resolve_fuzi_release(
+                      url,
+                      str(value["latest_version_name"]),
                   )
-                  if not any(parsed.path.startswith(prefix) for prefix in prefixes) or not parsed.path.endswith(".apk"):
-                      raise SystemExit("Fuzi APK URL escaped approved release namespace")
                   if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{64}", sha):
                       raise SystemExit("Fuzi APK SHA-256 invalid")
                   if not isinstance(size, int) or size <= 0 or size > 100 * 1024 * 1024:
                       raise SystemExit("Fuzi APK size violates release limit")
-                  tag = "fuzi-v" + str(value["latest_version_name"])
-                  asset_name = "FuziPartner-v" + str(value["latest_version_name"]) + ".apk"
                   api_url = (
-                      "https://api.github.com/repos/xiaoshutong-ai/mz-ph-ui/releases/tags/"
+                      "https://api.github.com/repos/"
+                      + release_repo
+                      + "/releases/tags/"
                       + tag
                   )
                   release = fetch_github_json(
@@ -564,24 +591,19 @@ jobs:
           policy_url = policy["download_url"]
           policy_sha = policy["apk_sha256"]
           policy_size = policy["apk_size"]
-          parsed = urlparse(policy_url)
-          if parsed.scheme != "https" or parsed.netloc != "github.com":
-              raise SystemExit("Fuzi v2 APK download must use HTTPS github.com")
-          expected_paths = {
-              "/EmilioJI/mz-ph-ui/releases/download/" + "fuzi-v" + latest_name + "/FuziPartner-v" + latest_name + ".apk",
-              "/xiaoshutong-ai/mz-ph-ui/releases/download/" + "fuzi-v" + latest_name + "/FuziPartner-v" + latest_name + ".apk",
-          }
-          if parsed.path not in expected_paths or parsed.query or parsed.fragment:
-              raise SystemExit("Fuzi v2 APK URL escaped approved Release namespace")
+          policy_release_repo, policy_tag, policy_asset_name = resolve_fuzi_release(
+              policy_url,
+              latest_name,
+          )
           if not isinstance(policy_sha, str) or not re.fullmatch(r"[0-9a-f]{64}", policy_sha):
               raise SystemExit("Fuzi v2 APK SHA-256 invalid")
           if not isinstance(policy_size, int) or policy_size <= 0 or policy_size > 100 * 1024 * 1024:
               raise SystemExit("Fuzi v2 APK size violates release limit")
 
-          policy_tag = "fuzi-v" + latest_name
-          policy_asset_name = "FuziPartner-v" + latest_name + ".apk"
           policy_api_url = (
-              "https://api.github.com/repos/xiaoshutong-ai/mz-ph-ui/releases/tags/"
+              "https://api.github.com/repos/"
+              + policy_release_repo
+              + "/releases/tags/"
               + policy_tag
           )
           policy_release = fetch_github_json(
