@@ -206,6 +206,7 @@
     </div>
     <div class="sr-board-personal-actions">
       <button id="srAgentPersonalRefresh" class="sr-btn" type="button">重新读取</button>
+      <button id="srAgentProjectFacts" class="sr-btn" type="button">查看项目事实</button>
       <button id="srAgentPersonalClose" class="sr-btn" type="button">收起</button>
     </div>
   </div>
@@ -1046,6 +1047,11 @@ document.getElementById("srAgentOverview").addEventListener("click",event=>{
 });
 document.getElementById("srAgentRefresh").addEventListener("click",()=>refreshAgents());
 document.getElementById("srAgentPersonalRefresh").addEventListener("click",()=>loadAgents());
+document.getElementById("srAgentProjectFacts").addEventListener("click",()=>{
+  const projectNav=document.querySelector('[data-sr="srProject"]');
+  if(projectNav) projectNav.click();
+  try{document.getElementById("srProject")?.scrollIntoView({block:"start"});}catch(_e){}
+});
 document.getElementById("srAgentPersonalClose").addEventListener("click",()=>{
   _srAgentSelected="";
   document.getElementById("srAgentPersonal").classList.add("hidden");
