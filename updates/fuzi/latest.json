@@ -4,7 +4,7 @@
   "channel": "stable",
   "latest_version_code": 5,
   "latest_version_name": "0.2.3",
-  "download_url": "https://github.com/xiaoshutong-ai/mz-ph-ui/releases/download/fuzi-v0.2.3/FuziPartner-v0.2.3.apk",
+  "download_url": "https://github.com/xiaoshutong-ai/xiaoshutong-box/releases/download/fuzipartner-v0.2.3/fuzipartner-0.2.3.apk",
   "apk_sha256": "115ff09a770783af9eb6ceaabd5603caa946cf9bc160446a88886024bf79f105",
   "apk_size": 92304463,
   "signer_cert_sha256": "F98BE0E3E9C11D4F7AED4DE54441AD87D12F99362F45EFAB84C933E9309641CC",
