@@ -46,3 +46,10 @@ The objective is complete only when its mandatory acceptance criteria pass or an
 - Use the owner's authorized local machine, Remote Desktop/terminal, Android Emulator, adb, or real device when CI cannot faithfully perform the required OS/GUI/hardware/device/debugging work.
 - Do not plan around Codex, require Codex participation, or consume Codex quota as part of the normal workflow.
 - Minimize owner intervention. Ask the owner only for decisions or actions that genuinely require owner authority, unavailable credentials/2FA, or irreversible/high-impact approval.
+## Fresh-session Project Agent continuity
+
+- Project GPT is the default technical executor for this public shell.
+- Recovery order: `AGENTS.md` -> `README.md` -> provenance/public-artifact metadata -> live GitHub branch/PR/head/CI/Pages evidence.
+- Project-specific source and product facts remain owned by their canonical private repositories; do not turn this mirror into a competing authority.
+- Check for an existing writer/PR before changing a public mirror.
+- This public mirror intentionally does not add a separate `PROJECT_STATE.md`; current-state recovery comes from existing public metadata/provenance plus live GitHub/CI/Pages evidence. A documentation snapshot never proves Pages deployment or end-to-end behavior.
