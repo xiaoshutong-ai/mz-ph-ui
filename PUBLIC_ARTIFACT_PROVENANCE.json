@@ -73,24 +73,62 @@
     {
       "path": "app.js",
       "platform_owner": "xiaoshutong-ai/mz-ph-ui",
-      "migration_state": "project-adapters-decomposition-pending",
+      "migration_state": "project-fragment-ownership-enforced; physical-decomposition-pending",
       "project_contributors": [
         "xiaoshutong-ai/xiaoshutong-Mengzheng",
-        "xiaoshutong-ai/xiaoshutong-shuyuan",
-        "xiaoshutong-ai/xiaoshutong-fuzipartner"
+        "xiaoshutong-ai/xiaoshutong-shuyuan"
       ],
-      "rule": "generic shell may remain here; project-specific adapters must be extracted to project-owned canonical modules"
+      "rule": "generic shell remains platform-owned; declared project fragments are canonical in private project repositories and must remain mirror-contract exact until physical module extraction"
     },
     {
       "path": "workspace.html",
       "platform_owner": "xiaoshutong-ai/mz-ph-ui",
-      "migration_state": "project-panels-decomposition-pending",
+      "migration_state": "project-fragment-ownership-enforced; physical-decomposition-pending",
       "project_contributors": [
-        "xiaoshutong-ai/xiaoshutong-Mengzheng",
-        "xiaoshutong-ai/xiaoshutong-shuyuan",
-        "xiaoshutong-ai/xiaoshutong-fuzipartner"
+        "xiaoshutong-ai/xiaoshutong-Mengzheng"
       ],
-      "rule": "generic Operations Hub layout may remain here; project-specific panels must move to project-owned adapters"
+      "rule": "generic Operations Hub layout remains platform-owned; declared project panel fragments are canonical in private project repositories and must remain mirror-contract exact until physical module extraction"
+    }
+  ],
+  "fragment_owners": [
+    {
+      "public_path": "app.js",
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
+      "canonical_root": "ops/public-web",
+      "canonical_commit": "2049cef8f0c8aec14f46a5d48e909fb03b096f15",
+      "canonical_paths": [
+        "ops/public-web/app-agent-status.fragment.js",
+        "ops/public-web/app-runtime-specs.fragment.js",
+        "ops/public-web/app-model-profiles.fragment.js",
+        "ops/public-web/app-runtime-validation.fragment.js",
+        "ops/public-web/app-runtime-presets.fragment.js",
+        "ops/public-web/app-runtime-consumer.fragment.js"
+      ],
+      "projection_mode": "embedded-fragment",
+      "mirror_contract": ".github/workflows/public-mirror-contract.yml"
+    },
+    {
+      "public_path": "app.js",
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-Mengzheng",
+      "canonical_root": "ops/public-web",
+      "canonical_commit": "13944070cd2f6228ea63600127298df41c089ecf",
+      "canonical_paths": [
+        "ops/public-web/app-provider-jev.fragment.js",
+        "ops/public-web/app-entitlements-config.fragment.js"
+      ],
+      "projection_mode": "embedded-fragment",
+      "mirror_contract": ".github/workflows/public-mirror-contract.yml"
+    },
+    {
+      "public_path": "workspace.html",
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-Mengzheng",
+      "canonical_root": "ops/public-web",
+      "canonical_commit": "13944070cd2f6228ea63600127298df41c089ecf",
+      "canonical_paths": [
+        "ops/public-web/workspace-project-panels.html"
+      ],
+      "projection_mode": "embedded-fragment",
+      "mirror_contract": ".github/workflows/public-mirror-contract.yml"
     }
   ]
 }
