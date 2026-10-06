@@ -377,6 +377,16 @@ jobs:
                       "ops/public-web/workspace-project-panels.html",
                   },
               }
+              target_fragment_owners = {
+                  **expected_fragment_owners,
+                  ("app.js", "xiaoshutong-ai/jev-chat-jarvis", "ops/public-web"): {
+                      "ops/public-web/app-runtime-specs.fragment.js",
+                      "ops/public-web/app-runtime-router.fragment.js",
+                      "ops/public-web/app-runtime-description.fragment.js",
+                      "ops/public-web/app-runtime-group-key.fragment.js",
+                      "ops/public-web/app-runtime-group-meta.fragment.js",
+                  },
+              }
               fragment_owners = provenance.get("fragment_owners")
               if not isinstance(fragment_owners, list):
                   raise SystemExit("v3 provenance fragment_owners must be a list")
@@ -390,25 +400,35 @@ jobs:
                       item.get("canonical_root"),
                   )
                   paths = item.get("canonical_paths")
-                  if key not in expected_fragment_owners or not isinstance(paths, list):
+                  if key not in target_fragment_owners or not isinstance(paths, list):
                       raise SystemExit("unapproved project fragment owner")
-                  if set(paths) != expected_fragment_owners[key]:
+                  if set(paths) != target_fragment_owners[key]:
                       raise SystemExit("project fragment canonical paths drifted")
                   if item.get("projection_mode") != "embedded-fragment":
                       raise SystemExit("project fragment projection mode must remain embedded-fragment")
                   if item.get("mirror_contract") != ".github/workflows/public-mirror-contract.yml":
                       raise SystemExit("project fragment mirror contract path drifted")
                   seen_fragment_owners[key] = set(paths)
-              if seen_fragment_owners != expected_fragment_owners:
+              if seen_fragment_owners not in (expected_fragment_owners, target_fragment_owners):
                   raise SystemExit("project fragment ownership map drifted")
 
               mixed_by_path = {
                   item.get("path"): item for item in mixed_files if isinstance(item, dict)
               }
-              if set(mixed_by_path.get("app.js", {}).get("project_contributors", [])) != {
-                  "xiaoshutong-ai/xiaoshutong-Mengzheng",
-                  "xiaoshutong-ai/xiaoshutong-shuyuan",
-              }:
+              app_project_contributors = set(
+                  mixed_by_path.get("app.js", {}).get("project_contributors", [])
+              )
+              if app_project_contributors not in (
+                  {
+                      "xiaoshutong-ai/xiaoshutong-Mengzheng",
+                      "xiaoshutong-ai/xiaoshutong-shuyuan",
+                  },
+                  {
+                      "xiaoshutong-ai/jev-chat-jarvis",
+                      "xiaoshutong-ai/xiaoshutong-Mengzheng",
+                      "xiaoshutong-ai/xiaoshutong-shuyuan",
+                  },
+              ):
                   raise SystemExit("app.js project contributor boundary drifted")
               if set(mixed_by_path.get("workspace.html", {}).get("project_contributors", [])) != {
                   "xiaoshutong-ai/xiaoshutong-Mengzheng",
