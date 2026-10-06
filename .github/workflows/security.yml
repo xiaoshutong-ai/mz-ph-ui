@@ -261,13 +261,14 @@ jobs:
                   "index.html", "account.html", "account.js"
               },
           }
+          allowed_provenance = expected_provenance if schema_version == 1 else target_expected_provenance
           seen_provenance = {}
           for item in artifacts:
               if not isinstance(item, dict):
                   raise SystemExit("public artifact provenance entry must be an object")
               key = (item.get("canonical_repository"), item.get("canonical_root"))
               paths = item.get("public_paths")
-              if key not in expected_provenance or not isinstance(paths, list):
+              if key not in allowed_provenance or not isinstance(paths, list):
                   raise SystemExit("unapproved public artifact provenance owner")
               seen_provenance[key] = set(paths)
               if item.get("publication_mode") not in {"mirror", "generated"}:
