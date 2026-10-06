@@ -107,23 +107,42 @@ jobs:
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
           style = Path("style.css").read_text(encoding="utf-8")
+          studyroom_board_style_path = Path("studyroom-board.css")
+          studyroom_board_style = (
+              studyroom_board_style_path.read_text(encoding="utf-8")
+              if studyroom_board_style_path.exists() else ""
+          )
 
           # StudyRoom board visual systems stay token-driven. During the v3→v4
           # rollout the trusted base gate accepts exactly either approved protocol,
           # then applies the same raw-color boundary to the active implementation.
           v3_marker = "/* ===== 水墨书院实时看板 v3 · 中文视觉系统 ===== */"
           v4_marker = "/* ===== 水墨书院实时看板 v4 · Calm Control Surface ===== */"
-          v3_start = style.find(v3_marker)
-          v4_start = style.find(v4_marker)
+          embedded_visual_markers = sum(marker in style for marker in (v3_marker, v4_marker))
+          separate_visual_markers = sum(marker in studyroom_board_style for marker in (v3_marker, v4_marker))
+          if studyroom_board_style:
+              if embedded_visual_markers:
+                  raise SystemExit("StudyRoom visual system must not be duplicated across shared and project CSS")
+              if separate_visual_markers != 1:
+                  raise SystemExit("separate StudyRoom CSS must contain exactly one approved visual-system marker")
+              if '<link rel="stylesheet" href="studyroom-board.css">' not in studyroom:
+                  raise SystemExit("StudyRoom page must load its project-owned board stylesheet")
+              board_style = studyroom_board_style
+          else:
+              if embedded_visual_markers != 1:
+                  raise SystemExit("embedded StudyRoom CSS must contain exactly one approved visual-system marker")
+              board_style = style
+          v3_start = board_style.find(v3_marker)
+          v4_start = board_style.find(v4_marker)
           if (v3_start >= 0) == (v4_start >= 0):
               raise SystemExit("StudyRoom must contain exactly one approved visual-system marker")
           board_version = "v4" if v4_start >= 0 else "v3"
           visual_start = v4_start if board_version == "v4" else v3_start
-          token_start = style.find("#srAgents{", visual_start)
-          token_end = style.find("\n}", token_start)
+          token_start = board_style.find("#srAgents{", visual_start)
+          token_end = board_style.find("\n}", token_start)
           if token_start < 0 or token_end <= token_start:
               raise SystemExit("StudyRoom visual token boundary missing")
-          token_block = style[token_start:token_end]
+          token_block = board_style[token_start:token_end]
           for token in (
               "--sr-text:", "--sr-surface:", "--sr-border:", "--sr-jade:",
               "--sr-danger:", "--sr-wait:", "--sr-decision:", "--sr-done:",
@@ -133,7 +152,7 @@ jobs:
           ):
               if token not in token_block:
                   raise SystemExit("StudyRoom semantic visual token missing: " + token)
-          component_rules = style[token_end + 2:]
+          component_rules = board_style[token_end + 2:]
           raw_component_colors = re.findall(
               r"#[0-9A-Fa-f]{3,8}\b|rgba?\([^)]*\)",
               component_rules,
@@ -239,7 +258,7 @@ jobs:
               ".nojekyll",
               "README.md",
               "SECURITY.md",
-              "AGENTS.md", "studyroom.html", "PUBLIC_ARTIFACT_PROVENANCE.json",
+              "AGENTS.md", "studyroom.html", "studyroom-board.css", "PUBLIC_ARTIFACT_PROVENANCE.json",
               "index.html",
               "workspace.html",
               "account.html",
@@ -268,7 +287,7 @@ jobs:
               raise SystemExit("public artifact provenance manifest is required")
           provenance = _provenance_json.loads(provenance_path.read_text(encoding="utf-8"))
           schema_version = provenance.get("schema_version")
-          if schema_version not in {1, 2} or provenance.get("policy") != "project-facts-follow-project":
+          if schema_version not in {1, 2, 3} or provenance.get("policy") != "project-facts-follow-project":
               raise SystemExit("public artifact provenance identity mismatch")
           artifacts = provenance.get("artifacts")
           if not isinstance(artifacts, list) or len(artifacts) < 2:
@@ -281,7 +300,7 @@ jobs:
                   "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
               },
           }
-          target_expected_provenance = {
+          target_expected_provenance_v2 = {
               ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
                   "studyroom.html", "board-consumer.js", "devices.html",
                   "assets/characters/bi.png", "assets/characters/mo.png", "assets/characters/zhi.png",
@@ -294,7 +313,20 @@ jobs:
                   "index.html", "account.html", "account.js"
               },
           }
-          allowed_provenance = expected_provenance if schema_version == 1 else target_expected_provenance
+          target_expected_provenance_v3 = {
+              ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
+                  "studyroom.html", "board-consumer.js", "devices.html", "studyroom-board.css",
+                  "assets/characters/bi.png", "assets/characters/mo.png", "assets/characters/zhi.png",
+                  "assets/characters/yan.png", "assets/characters/juan.png", "assets/characters/xia.png"
+              },
+              ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
+                  "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
+              },
+              ("xiaoshutong-ai/xiaoshutong-Mengzheng", "ops/public-web"): {
+                  "index.html", "account.html", "account.js"
+              },
+          }
+          allowed_provenance = {1: expected_provenance, 2: target_expected_provenance_v2, 3: target_expected_provenance_v3}[schema_version]
           seen_provenance = {}
           for item in artifacts:
               if not isinstance(item, dict):
@@ -311,14 +343,22 @@ jobs:
                   raise SystemExit("legacy public artifact provenance paths drifted")
               if provenance.get("mixed_files") not in (None, []):
                   raise SystemExit("legacy provenance may not declare mixed files")
-          else:
-              if seen_provenance != target_expected_provenance:
+          elif schema_version == 2:
+              if seen_provenance != target_expected_provenance_v2:
                   raise SystemExit("v2 public artifact provenance paths drifted")
               mixed_files = provenance.get("mixed_files")
               if not isinstance(mixed_files, list):
                   raise SystemExit("v2 provenance mixed_files must be a list")
               if {item.get("path") for item in mixed_files if isinstance(item, dict)} != {"app.js", "workspace.html", "style.css"}:
                   raise SystemExit("v2 mixed-file provenance paths drifted")
+          else:
+              if seen_provenance != target_expected_provenance_v3:
+                  raise SystemExit("v3 public artifact provenance paths drifted")
+              mixed_files = provenance.get("mixed_files")
+              if not isinstance(mixed_files, list):
+                  raise SystemExit("v3 provenance mixed_files must be a list")
+              if {item.get("path") for item in mixed_files if isinstance(item, dict)} != {"app.js", "workspace.html"}:
+                  raise SystemExit("v3 mixed-file provenance paths drifted")
 
           repo_text_parts = []
           for rel, path in tracked:
