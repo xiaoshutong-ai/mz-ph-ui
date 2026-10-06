@@ -748,23 +748,11 @@ function capabilitySummary(capabilities){
 }
 
 function projectIntegrationMessage(project){
-  const key=project?.project_key||"";
-  if(key==="mengzheng"){
-    return "完整运维适配已启用：主模型 Provider、Jev 决策增强、安全设置与审计均可在本 Hub 操作。";
-  }
-  if(key==="xiaoshutong"){
-    return "基础接入 + staged 配置仓已完成。已映射 core-api 的 XST_* 模型/OCR/ASR/TTS 合同，Key 使用小书童独立 Vault 命名空间；当前尚未接管运行时。";
-  }
-  if(key==="fuzipartner"){
-    return "基础接入已完成。当前以 Android 本地能力为主，没有独立云端 Provider 控制面；下一层接入 CI、版本与发布健康状态。";
-  }
-  if(key==="jev-chat-jarvis"){
-    return "基础接入 + staged 配置仓已完成。Judge / Reply / Vision 已独立建模并使用 JEV 专属 Vault；Android 当前仍读取设备端设置，尚未切换到云端接管。";
-  }
-  if(key==="dev-steward"){
-    return "工程巡检控制面已接入。这里展示 18 个仓库 / 20 个 repo-ref 的只读巡检、风险趋势、覆盖状态与 GitHub 证据；不提供业务仓库写操作。";
-  }
-  return "项目已注册到统一认证、RBAC 与审计体系；项目专属运维适配待接入。";
+  const source=String(project?.status_source||"").trim();
+  const sourceText=source
+    ?"当前状态以 "+source+" 与项目证据为准。"
+    :"当前状态以项目仓、CI、运行态与发布证据为准。";
+  return "该项目已接入统一运维入口；本页仅展示经授权的运行态投影，不在公开壳内维护项目事实。"+sourceText;
 }
 
 function runtimeField(spec,value,secretStates){
