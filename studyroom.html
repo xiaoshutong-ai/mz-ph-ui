@@ -327,6 +327,49 @@ function srProjectConclusion(value,status){
   if(state==="queued") return {label:"排队",kind:"warn"};
   return {label:conclusion||state||"未知",kind:""};
 }
+function srProjectWorkflowPath(item){
+  return String(item?.path||"").split("@",1)[0];
+}
+function srProjectLatestRun(runs,path){
+  const candidates=(Array.isArray(runs)?runs:[])
+    .filter(item=>srProjectWorkflowPath(item)===path)
+    .slice()
+    .sort((a,b)=>{
+      const bt=Date.parse(String(b?.created_at||""));
+      const at=Date.parse(String(a?.created_at||""));
+      return (Number.isFinite(bt)?bt:0)-(Number.isFinite(at)?at:0);
+    });
+  return candidates[0]||null;
+}
+function srProjectGateCard(label,run,repo,currentCommit){
+  if(!run){
+    return '<div class="sr-project-card"><h3>'+esc(label)+'</h3><strong>尚未同步</strong>'
+      +'<small>当前结构化快照没有该 workflow run，不能据此判断通过或失败。</small></div>';
+  }
+  const result=srProjectConclusion(run?.conclusion,run?.status);
+  const runId=Number(run?.id);
+  const url=Number.isInteger(runId)&&runId>0?srProjectGitHubUrl(repo,"actions/runs/"+runId):"";
+  const head=String(run?.head_sha||"");
+  const exact=/^[0-9a-f]{40}$/i.test(head)&&head===currentCommit;
+  const headline=(exact?"当前 head · ":"最近一次 · ")+result.label;
+  const meta=(exact?"exact "+srProjectShortSha(head):"head "+srProjectShortSha(head))
+    +" · "+srProjectTime(run?.created_at);
+  return '<div class="sr-project-card"><h3>'+esc(label)+'</h3><strong>'
+    +srProjectLink(headline,url)+'</strong><small>'+esc(meta)+'</small></div>';
+}
+function srProjectOpsHealthHtml(runs,repo,currentCommit){
+  const gates=[
+    ["公共镜像合同",".github/workflows/public-mirror-contract.yml"],
+    ["镜像审核包",".github/workflows/public-mirror-release-pack.yml"],
+    ["Agent Control v2",".github/workflows/agent-control-v2.yml"],
+    ["更新完整性",".github/workflows/update-integrity.yml"]
+  ];
+  return '<section class="sr-project-section"><h3>运维 Gate</h3>'
+    +'<p>只读取 Dev Steward 已采集的 workflow run。只有 run.head_sha 与当前源码 commit 完全一致时才标“当前 head”；旧 PASS 不冒充当前 PASS。</p>'
+    +'<div class="sr-project-grid">'
+    +gates.map(([label,path])=>srProjectGateCard(label,srProjectLatestRun(runs,path),repo,currentCommit)).join("")
+    +'</div></section>';
+}
 function srProjectCoverageText(steward,target){
   const coverage=String(steward?.coverage||"NO_DATA");
   const state=String(target?.state||"UNKNOWN");
@@ -515,6 +558,8 @@ function renderProjectEvidence(evidence){
     html+='<strong>尚未同步</strong><small>不会根据 commits/PR 自动推断 Goal 或里程碑。</small>';
   }
   html+='</div></div>';
+
+  html+=srProjectOpsHealthHtml(runs,repo,commit);
 
   html+='<section class="sr-project-section"><h3>证据口径</h3><p>观察事实与工作事实分离；success 才算通过，skipped / cancelled 不算 PASS。</p>';
   html+='<div class="sr-project-empty">'+esc(srProjectCoverageText(steward,target))+'</div></section>';
