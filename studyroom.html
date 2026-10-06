@@ -62,6 +62,21 @@
 .sr-project-mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;}
 .sr-project-empty{padding:14px;border:1px dashed #d8c9b3;border-radius:10px;background:#faf7f1;color:#7b6a56;line-height:1.65;}
 .sr-project-gantt-empty{padding:18px;border-radius:10px;background:repeating-linear-gradient(135deg,#faf7f0,#faf7f0 10px,#f5efe5 10px,#f5efe5 20px);border:1px solid #e6dccb;color:#6f604d;line-height:1.7;}
+.sr-project-plan-block{display:grid;gap:10px;margin-top:10px;}
+.sr-project-plan-group{padding:12px;border:1px solid #eee5d7;border-radius:10px;background:#fcfaf6;}
+.sr-project-plan-group h4{margin:0 0 8px;font-size:13px;color:#493b2e;}
+.sr-project-plan-group ul{display:grid;gap:8px;margin:0;padding:0;list-style:none;}
+.sr-project-plan-group li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 8px;align-items:start;}
+.sr-project-plan-group li small{grid-column:1/-1;color:#8a7b66;line-height:1.45;}
+.sr-project-gantt{display:grid;gap:8px;margin-top:12px;}
+.sr-project-gantt-axis{display:flex;justify-content:space-between;padding-left:190px;color:#8a7b66;font-size:11px;}
+.sr-project-gantt-row{display:grid;grid-template-columns:180px minmax(0,1fr);gap:10px;align-items:center;}
+.sr-project-gantt-label{min-width:0;}
+.sr-project-gantt-label strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;}
+.sr-project-gantt-label small{display:block;color:#8a7b66;margin-top:2px;}
+.sr-project-gantt-track{position:relative;height:12px;border-radius:999px;background:#efe9de;overflow:hidden;}
+.sr-project-gantt-bar{position:absolute;top:0;bottom:0;left:var(--gantt-left);width:var(--gantt-width);min-width:4px;border-radius:999px;background:linear-gradient(90deg,#55786d,#88a195);}
+@media(max-width:640px){.sr-project-gantt-axis{padding-left:0}.sr-project-gantt-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body class="steward-focus-mode">
@@ -323,6 +338,104 @@ function srProjectCoverageText(steward,target){
   if(!target) return "最新巡检尚未提供本项目 target；不回退为旧项目事实。";
   return "本项目采集状态 "+state+(limits.length?" · 限制："+limits.join("、"):"");
 }
+function srProjectPlan(value){
+  const snapshot=value&&typeof value==="object"&&!Array.isArray(value)?value:{};
+  const raw=snapshot.project_plan;
+  if(!raw||typeof raw!=="object"||Array.isArray(raw)||raw.schema_version!==1)return null;
+  return {
+    goal:raw.goal&&typeof raw.goal==="object"&&!Array.isArray(raw.goal)?raw.goal:null,
+    milestones:Array.isArray(raw.milestones)?raw.milestones.slice(0,30):[],
+    acceptance:Array.isArray(raw.acceptance_criteria)?raw.acceptance_criteria.slice(0,60):[],
+    decisions:Array.isArray(raw.decisions)?raw.decisions.slice(0,30):[]
+  };
+}
+function srProjectPlanStatus(value){
+  const raw=String(value||"").trim().toLowerCase();
+  return {
+    done:"已完成",in_progress:"进行中",blocked:"受阻",pending:"待推进",
+    not_applicable:"不适用",open:"开放",closed:"关闭"
+  }[raw]||"未标注";
+}
+function srProjectDateOnly(value){
+  const raw=String(value||"").trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(raw))return null;
+  const time=Date.parse(raw+"T00:00:00Z");
+  return Number.isFinite(time)?{raw,time}:null;
+}
+function srProjectPlanHtml(snapshot){
+  const plan=srProjectPlan(snapshot);
+  if(!plan){
+    return '<div class="sr-project-gantt-empty"><strong>计划数据尚未同步</strong><br>'
+      +'status_snapshot.project_plan 尚未提供 schema v1。平台不会根据 commits、merged PR、CI 次数或当前日期推断阶段、AC 完成率、开始日或截止日。</div>';
+  }
+
+  const blocks=[];
+  if(plan.goal){
+    const goalTitle=String(plan.goal.title||("Goal #"+String(plan.goal.number||"")));
+    const goalUrl=String(plan.goal.url||"");
+    blocks.push('<div class="sr-project-plan-group"><h4>Goal</h4><div class="sr-project-item-head"><strong>'
+      +srProjectLink(goalTitle,/^https:\/\/github\.com\//.test(goalUrl)?goalUrl:"")
+      +'</strong><span class="sr-project-pill info">'+esc(srProjectPlanStatus(plan.goal.state))+'</span></div></div>');
+  }
+  if(plan.milestones.length){
+    blocks.push('<div class="sr-project-plan-group"><h4>里程碑</h4><ul>'
+      +plan.milestones.map(item=>{
+        const dates=[item?.planned_start,item?.planned_end].filter(Boolean).join(" → ");
+        return '<li><strong>'+esc(item?.title||item?.id||"未命名里程碑")+'</strong>'
+          +'<span class="sr-project-pill">'+esc(srProjectPlanStatus(item?.status))+'</span>'
+          +'<small>'+(dates?esc(dates):"未提供批准日期")+'</small></li>';
+      }).join("")+'</ul></div>');
+  }
+  if(plan.acceptance.length){
+    blocks.push('<div class="sr-project-plan-group"><h4>Acceptance Criteria</h4><ul>'
+      +plan.acceptance.map(item=>{
+        const url=String(item?.evidence_url||"");
+        return '<li><strong>'+esc(item?.title||item?.id||"未命名 AC")+'</strong>'
+          +'<span class="sr-project-pill">'+esc(srProjectPlanStatus(item?.status))+'</span>'
+          +(url&&/^https:\/\/github\.com\//.test(url)?'<small>'+srProjectLink("打开证据",url)+'</small>':'')
+          +'</li>';
+      }).join("")+'</ul></div>');
+  }
+  if(plan.decisions.length){
+    blocks.push('<div class="sr-project-plan-group"><h4>老板决策 / 关键决策</h4><ul>'
+      +plan.decisions.map(item=>{
+        const url=String(item?.source_url||"");
+        return '<li><strong>'+esc(item?.title||"决策")+'</strong>'
+          +'<span></span>'
+          +'<small>'+(item?.decided_at?esc(String(item.decided_at)):"未提供决策日期")
+          +(url&&/^https:\/\/github\.com\//.test(url)?" · "+srProjectLink("来源",url):"")+'</small></li>';
+      }).join("")+'</ul></div>');
+  }
+
+  const dated=plan.milestones.map(item=>{
+    const start=srProjectDateOnly(item?.planned_start);
+    const end=srProjectDateOnly(item?.planned_end);
+    return start&&end&&end.time>=start.time?{item,start,end}:null;
+  }).filter(Boolean);
+
+  let gantt='<div class="sr-project-gantt-empty"><strong>无批准日期</strong><br>'
+    +'当前里程碑没有同时提供 planned_start / planned_end，因此不绘制甘特条，也不推断百分比。</div>';
+  if(dated.length){
+    const day=86400000;
+    const min=Math.min(...dated.map(row=>row.start.time));
+    const max=Math.max(...dated.map(row=>row.end.time));
+    const total=Math.max(1,Math.floor((max-min)/day)+1);
+    gantt='<div class="sr-project-gantt"><div class="sr-project-gantt-axis"><span>'
+      +esc(new Date(min).toISOString().slice(0,10))+'</span><span>'
+      +esc(new Date(max).toISOString().slice(0,10))+'</span></div>'
+      +dated.map(row=>{
+        const left=((row.start.time-min)/day)/total*100;
+        const width=(Math.floor((row.end.time-row.start.time)/day)+1)/total*100;
+        return '<div class="sr-project-gantt-row"><div class="sr-project-gantt-label"><strong>'
+          +esc(row.item?.title||row.item?.id||"未命名里程碑")+'</strong><small>'
+          +esc(srProjectPlanStatus(row.item?.status))+'</small></div><div class="sr-project-gantt-track">'
+          +'<div class="sr-project-gantt-bar" style="--gantt-left:'+left.toFixed(3)+'%;--gantt-width:'
+          +Math.max(width,1).toFixed(3)+'%"></div></div></div>';
+      }).join("")+'</div>';
+  }
+
+  return '<div class="sr-project-plan-block">'+(blocks.join("")||'<div class="sr-project-empty">结构化计划存在，但当前没有可展示条目。</div>')+gantt+'</div>';
+}
 function renderProjectEvidence(evidence){
   const e=evidence&&typeof evidence==="object"?evidence:{};
   const target=e.target&&typeof e.target==="object"?e.target:null;
@@ -409,8 +522,8 @@ function renderProjectEvidence(evidence){
   }else html+='<div class="sr-project-empty">昨日进展尚未同步到当前结构化快照。</div>';
   html+='</div></section>';
 
-  html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>这里只消费项目仓显式计划，不从 GitHub 活动反推计划完成度。</p>';
-  html+='<div class="sr-project-gantt-empty"><strong>计划数据尚未同步</strong><br>当前 shared contract 还没有项目仓显式 milestone / start / end 数据。平台因此不显示虚构百分比、截止日期或“全部未开始”。</div></section>';
+  html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>这里只消费 status_snapshot.project_plan schema v1。没有批准日期就不画甘特，不从 GitHub 活动反推完成度。</p>';
+  html+=srProjectPlanHtml(e.status_snapshot||{})+'</section>';
 
   document.getElementById("srProjectEvidence").innerHTML=html;
   document.getElementById("srProjectState").textContent=
