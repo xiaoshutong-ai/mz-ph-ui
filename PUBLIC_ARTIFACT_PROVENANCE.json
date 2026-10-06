@@ -17,7 +17,7 @@
       ],
       "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
       "canonical_root": "ops/public-web",
-      "canonical_commit": "d623d271475a3748aaf3badf9b77d47de4c621f6",
+      "canonical_commit": "7d525bc0851370749f5ef46f22e6283ddce9b0b6",
       "canonical_paths": [
         "ops/public-web/studyroom.html",
         "ops/public-web/board-consumer.js",
@@ -96,7 +96,7 @@
       "public_path": "app.js",
       "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
       "canonical_root": "ops/public-web",
-      "canonical_commit": "d623d271475a3748aaf3badf9b77d47de4c621f6",
+      "canonical_commit": "7d525bc0851370749f5ef46f22e6283ddce9b0b6",
       "canonical_paths": [
         "ops/public-web/app-agent-status.fragment.js",
         "ops/public-web/app-runtime-specs.fragment.js",
