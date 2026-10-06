@@ -351,6 +351,10 @@ jobs:
           }
           if security_uses != expected_security_uses:
               raise SystemExit("security workflow actions must stay pinned to the approved SHA")
+          trusted_release_token_marker = "GH_RELEASE_READ_TOKEN: $" + "{{ github" + ".token }}"
+          if security_workflow.count(trusted_release_token_marker) > 1:
+              raise SystemExit("trusted Release metadata token may be step-scoped at most once")
+          security_workflow_for_privileged_scan = security_workflow.replace(trusted_release_token_marker, "")
           privileged_markers = (
               "secrets" + ".",
               "github" + ".token",
@@ -358,7 +362,7 @@ jobs:
               "toJSON" + "(github)",
           )
           for forbidden in privileged_markers:
-              if forbidden in security_workflow:
+              if forbidden in security_workflow_for_privileged_scan:
                   raise SystemExit("security workflow may not expose privileged GitHub context: " + forbidden)
 
           pages = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
