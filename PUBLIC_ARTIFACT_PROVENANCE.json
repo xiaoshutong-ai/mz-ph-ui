@@ -41,7 +41,7 @@
       ],
       "canonical_repository": "xiaoshutong-ai/xiaoshutong-fuzipartner",
       "canonical_root": "ops/public-distribution",
-      "canonical_commit": "2bafc82615f33366cbdf40e2ec5c90310f6b7f0a",
+      "canonical_commit": "6c22fd8fb9e17dcdf755356709320c33a8367e6b",
       "canonical_paths": [
         "ops/public-distribution/latest.json",
         "ops/public-distribution/v2/policy.json"

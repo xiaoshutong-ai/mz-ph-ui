@@ -2,13 +2,13 @@
   "schema_version": 2,
   "product": "fuzi-partner",
   "channel": "stable",
-  "latest_version_code": 5,
-  "latest_version_name": "0.2.3",
+  "latest_version_code": 6,
+  "latest_version_name": "0.2.4",
   "minimum_supported_version_code": 3,
-  "download_url": "https://github.com/xiaoshutong-ai/xiaoshutong-box/releases/download/fuzipartner-v0.2.3/fuzipartner-0.2.3.apk",
-  "apk_sha256": "115ff09a770783af9eb6ceaabd5603caa946cf9bc160446a88886024bf79f105",
-  "apk_size": 92304463,
+  "download_url": "https://github.com/xiaoshutong-ai/xiaoshutong-box/releases/download/fuzipartner-v0.2.4/fuzipartner-0.2.4.apk",
+  "apk_sha256": "ae7197b83d5ae22aeead5b6ac75cbad9f10b3ab9ccb9ca58cea0d6b27830d00f",
+  "apk_size": 95119421,
   "signer_cert_sha256": "F98BE0E3E9C11D4F7AED4DE54441AD87D12F99362F45EFAB84C933E9309641CC",
-  "release_notes": "v0.2.3 当前稳定版本；v0.2.1（code 3）继续作为最低支持版本，本次为可选更新，不启用强制更新。",
-  "published_at": "2026-09-26T11:34:03Z"
+  "release_notes": "v0.2.4 当前稳定版本；完成现代国风 UI 收口与六角色提醒声音统一。v0.2.1（code 3）继续作为最低支持版本，本次为可选更新，不启用强制更新。",
+  "published_at": "2026-10-06T12:19:34Z"
 }
