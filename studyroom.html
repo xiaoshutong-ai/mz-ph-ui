@@ -367,7 +367,7 @@ function srProjectPlanHtml(snapshot){
   const plan=srProjectPlan(snapshot);
   if(!plan){
     return '<div class="sr-project-gantt-empty"><strong>计划数据尚未同步</strong><br>'
-      +'status_snapshot.project_plan 尚未提供 schema v1。平台不会根据 commits、merged PR、CI 次数或当前日期推断阶段、AC 完成率、开始日或截止日。</div>';
+      +'target.project_plan / 兼容 status_snapshot.project_plan 尚未提供 schema v1。平台不会根据 commits、merged PR、CI 次数或当前日期推断阶段、AC 完成率、开始日或截止日。</div>';
   }
 
   const blocks=[];
@@ -540,8 +540,22 @@ function renderProjectEvidence(evidence){
   }else html+='<div class="sr-project-empty">昨日进展尚未同步到当前结构化快照。</div>';
   html+='</div></section>';
 
-  html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>这里只消费 status_snapshot.project_plan schema v1。没有批准日期就不画甘特，不从 GitHub 活动反推完成度。</p>';
-  html+=srProjectPlanHtml(e.status_snapshot||{})+'</section>';
+  const targetPlan=target?.project_plan&&typeof target.project_plan==="object"&&!Array.isArray(target.project_plan)
+    ?target.project_plan:null;
+  const legacyPlan=e.status_snapshot?.project_plan&&typeof e.status_snapshot.project_plan==="object"&&!Array.isArray(e.status_snapshot.project_plan)
+    ?e.status_snapshot.project_plan:null;
+  const planProjection={project_plan:targetPlan||legacyPlan};
+  const planSource=targetPlan
+    ?"项目仓 ops/project-plan.json · Dev Steward pinned evidence"
+    :legacyPlan
+      ?"兼容旧 status_snapshot.project_plan（仅在项目仓计划未同步时使用）"
+      :"尚未同步";
+  const planSourceUrl=String(target?.project_plan_source?.url||"");
+  html+='<section class="sr-project-section"><h3>计划 / 甘特图</h3><p>优先消费 target.project_plan（项目仓 pinned evidence）；旧 status_snapshot.project_plan 仅作过渡 fallback。没有批准日期就不画甘特，不从 GitHub 活动反推完成度。</p>';
+  html+='<div class="sr-project-item-meta">计划来源：'
+    +(planSourceUrl&&/^https:\/\/github\.com\//.test(planSourceUrl)?srProjectLink(planSource,planSourceUrl):esc(planSource))
+    +'</div>';
+  html+=srProjectPlanHtml(planProjection)+'</section>';
 
   document.getElementById("srProjectEvidence").innerHTML=html;
   document.getElementById("srProjectState").textContent=
