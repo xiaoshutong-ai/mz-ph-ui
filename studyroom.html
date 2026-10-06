@@ -120,7 +120,7 @@
 <p>六位住户的身心安放之所 · 设备与状态一目了然</p>
 </div>
 <div class="steward-header-controls">
-<button class="sr-btn" type="button" onclick="refreshAll()">刷新</button>
+<button class="sr-btn" type="button" onclick="refreshAll(true)">刷新</button>
 </div>
 </header>
 
@@ -133,6 +133,20 @@
 <div class="sr-stat"><div class="v" id="stDevPending">—</div><div class="k">待邀请码</div></div>
 </div>
 <p class="muted">版本发布：<a id="stApkLink" href="#" target="_blank">下载最新 APK</a> · <span id="stChangelog"></span></p>
+<section class="sr-project-section" aria-labelledby="srOverviewProjectHealthTitle">
+  <div class="sr-project-hero">
+    <div>
+      <span class="sr-board-kicker">项目健康</span>
+      <h2 id="srOverviewProjectHealthTitle">水墨书院 · 当前工程态势</h2>
+      <p>只汇总当前项目证据：源码 head、运维 Gate、明确受阻项和最近一次可信采集。未知保持未知。</p>
+    </div>
+    <button id="srOverviewProjectHealthOpen" class="sr-btn" type="button">查看项目事实</button>
+  </div>
+  <div id="srOverviewProjectHealth" class="sr-project-grid">
+    <div class="sr-project-card"><h3>项目证据</h3><strong>等待首次读取</strong><small>不会用旧快照冒充当前事实。</small></div>
+  </div>
+  <div id="srOverviewProjectHealthMeta" class="sr-project-state">等待首次读取</div>
+</section>
 </div>
 
 <!-- 设备管理 -->
@@ -293,7 +307,7 @@ document.querySelectorAll("[data-sr]").forEach(b => b.addEventListener("click", 
   document.getElementById(b.dataset.sr).classList.add("active");
   if(b.dataset.sr==="srChat") loadStudyroomChatConfig();
   if(b.dataset.sr==="srAgents") loadAgents();
-  if(b.dataset.sr==="srProject") loadProjectEvidence();
+  if(b.dataset.sr==="srProject") loadProjectEvidence(false);
 }));
 
 function srProjectTime(value){
@@ -406,6 +420,74 @@ function srProjectDateOnly(value){
   const time=Date.parse(raw+"T00:00:00Z");
   return Number.isFinite(time)?{raw,time}:null;
 }
+function srProjectGateHealth(runs,currentCommit){
+  const paths=[
+    ".github/workflows/public-mirror-contract.yml",
+    ".github/workflows/public-mirror-release-pack.yml",
+    ".github/workflows/agent-control-v2.yml",
+    ".github/workflows/update-integrity.yml"
+  ];
+  let exact=0,passed=0,failed=0,running=0;
+  paths.forEach(path=>{
+    const run=srProjectLatestRun(runs,path);
+    const head=String(run?.head_sha||"");
+    if(!/^[0-9a-f]{40}$/i.test(head)||head!==currentCommit)return;
+    exact++;
+    const result=srProjectConclusion(run?.conclusion,run?.status);
+    if(result.kind==="ok")passed++;
+    else if(result.kind==="bad")failed++;
+    else if(["in_progress","queued"].includes(String(run?.status||"").toLowerCase()))running++;
+  });
+  return {total:paths.length,exact,passed,failed,running};
+}
+function renderProjectOverviewHealth(evidence){
+  const box=document.getElementById("srOverviewProjectHealth");
+  const meta=document.getElementById("srOverviewProjectHealthMeta");
+  if(!box||!meta)return;
+  const e=evidence&&typeof evidence==="object"&&!Array.isArray(evidence)?evidence:null;
+  if(!e){
+    box.innerHTML='<div class="sr-project-card"><h3>项目证据</h3><strong>尚未同步</strong>'
+      +'<small>当前没有可核验项目证据，不能据此判断项目无异常。</small></div>';
+    meta.textContent="项目证据尚未同步。";
+    return;
+  }
+  const target=e.target&&typeof e.target==="object"&&!Array.isArray(e.target)?e.target:null;
+  const repo=String(e.repository_full_name||target?.repo||"");
+  const commit=String(target?.commit||"");
+  const runs=Array.isArray(target?.runs)?target.runs:[];
+  const gates=srProjectGateHealth(runs,commit);
+  const targetPlan=target?.project_plan&&typeof target.project_plan==="object"&&!Array.isArray(target.project_plan)
+    ?target.project_plan:null;
+  const legacyPlan=e.status_snapshot?.project_plan&&typeof e.status_snapshot.project_plan==="object"&&!Array.isArray(e.status_snapshot.project_plan)
+    ?e.status_snapshot.project_plan:null;
+  const plan=srProjectPlan({project_plan:targetPlan||legacyPlan});
+  const planStats=plan?srProjectPlanStats(plan):null;
+  const blocked=planStats?planStats.milestoneBlocked+planStats.acceptanceBlocked:null;
+  const gateText=!/^[0-9a-f]{40}$/i.test(commit)
+    ?"当前 head 尚未同步"
+    :gates.failed
+      ?"当前 head · "+gates.failed+" 项失败"
+      :gates.passed===gates.total
+        ?gates.total+"/"+gates.total+" 当前 head 通过"
+        :"当前 head "+gates.passed+"/"+gates.total+" 通过 · "+gates.exact+"/"+gates.total+" 有证据";
+  const coverage=String(e.steward?.coverage||"NO_DATA");
+  const generated=e.steward?.generated_at?srProjectTime(e.steward.generated_at):"尚未同步";
+  box.innerHTML=
+    '<div class="sr-project-card"><h3>源码</h3><strong>'
+      +esc(repo?(repo+"@"+srProjectShortSha(commit)):"尚未同步")
+      +'</strong><small>来自 Dev Steward 当前 target，不从浏览器猜测。</small></div>'
+    +'<div class="sr-project-card"><h3>运维 Gate</h3><strong>'+esc(gateText)+'</strong>'
+      +'<small>只把 exact head 的 run 计入当前 Gate。</small></div>'
+    +'<div class="sr-project-card"><h3>明确受阻</h3><strong>'
+      +esc(blocked==null?"计划尚未同步":(blocked+" 项"))
+      +'</strong><small>'+esc(planStats&&planStats.attention.length
+        ?planStats.attention.slice(0,2).join(" · ")
+        :"没有项目仓显式 blocked 项，或计划尚未同步。")+'</small></div>'
+    +'<div class="sr-project-card"><h3>证据采集</h3><strong>'+esc(coverage)+'</strong>'
+      +'<small>'+esc("最近采集："+generated)+'</small></div>';
+  meta.textContent=srProjectCoverageText(e.steward,target);
+}
+
 function srProjectPlanStats(plan){
   const milestones=Array.isArray(plan?.milestones)?plan.milestones:[];
   const acceptance=Array.isArray(plan?.acceptance)?plan.acceptance:[];
@@ -525,6 +607,7 @@ function srProjectPlanHtml(snapshot){
   return '<div class="sr-project-plan-block">'+(blocks.join("")||'<div class="sr-project-empty">结构化计划存在，但当前没有可展示条目。</div>')+gantt+'</div>';
 }
 function renderProjectEvidence(evidence){
+  renderProjectOverviewHealth(evidence);
   const e=evidence&&typeof evidence==="object"?evidence:{};
   const target=e.target&&typeof e.target==="object"?e.target:null;
   const steward=e.steward&&typeof e.steward==="object"?e.steward:null;
@@ -652,16 +735,28 @@ function renderProjectEvidence(evidence){
     +" · "+sourceAge;
 }
 let _srProjectLoading=false;
-async function loadProjectEvidence(){
+let _srProjectEvidenceSnapshot=null;
+let _srProjectEvidenceReadAt=0;
+const SR_PROJECT_EVIDENCE_CACHE_MS=60000;
+async function loadProjectEvidence(force=false){
   if(_srProjectLoading) return;
+  if(!force&&_srProjectEvidenceSnapshot&&Date.now()-_srProjectEvidenceReadAt<SR_PROJECT_EVIDENCE_CACHE_MS){
+    renderProjectEvidence(_srProjectEvidenceSnapshot);
+    return;
+  }
   _srProjectLoading=true;
   const button=document.getElementById("srProjectRefresh");
   if(button) button.disabled=true;
   document.getElementById("srProjectState").textContent="正在读取项目仓 / CI / 巡检证据…";
   try{
     const value=await opsApi("project_evidence");
-    renderProjectEvidence(value.evidence);
+    _srProjectEvidenceSnapshot=value.evidence&&typeof value.evidence==="object"?value.evidence:null;
+    _srProjectEvidenceReadAt=Date.now();
+    renderProjectEvidence(_srProjectEvidenceSnapshot);
   }catch(e){
+    _srProjectEvidenceSnapshot=null;
+    _srProjectEvidenceReadAt=0;
+    renderProjectOverviewHealth(null);
     document.getElementById("srProjectEvidence").innerHTML='<div class="sr-project-empty">当前无法读取项目证据。不会回退显示旧 pilot snapshot。</div>';
     document.getElementById("srProjectState").textContent="读取失败 · "+(e.message||e);
   }finally{
@@ -669,7 +764,12 @@ async function loadProjectEvidence(){
     if(button) button.disabled=false;
   }
 }
-document.getElementById("srProjectRefresh").addEventListener("click",()=>loadProjectEvidence());
+document.getElementById("srProjectRefresh").addEventListener("click",()=>loadProjectEvidence(true));
+document.getElementById("srOverviewProjectHealthOpen").addEventListener("click",()=>{
+  const projectNav=document.querySelector('[data-sr="srProject"]');
+  if(projectNav)projectNav.click();
+  try{document.getElementById("srProject")?.scrollIntoView({block:"start"});}catch(_e){}
+});
 
 // 总览
 async function loadOverview(){
@@ -1168,11 +1268,12 @@ function ensureSrAgentTimer(){
   },3600000);
 }
 
-function refreshAll(){
+function refreshAll(forceProjectEvidence=false){
   loadOverview();
   loadDevices();
   loadPresetCodes();
   loadAgents();
+  loadProjectEvidence(!!forceProjectEvidence);
   ensureSrAgentTimer();
 }
 
