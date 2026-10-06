@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "policy": "project-facts-follow-project",
   "artifacts": [
     {
@@ -7,6 +7,7 @@
         "studyroom.html",
         "board-consumer.js",
         "devices.html",
+        "studyroom-board.css",
         "assets/characters/bi.png",
         "assets/characters/mo.png",
         "assets/characters/zhi.png",
@@ -90,19 +91,6 @@
         "xiaoshutong-ai/xiaoshutong-fuzipartner"
       ],
       "rule": "generic Operations Hub layout may remain here; project-specific panels must move to project-owned adapters"
-    },
-    {
-      "path": "style.css",
-      "platform_owner": "xiaoshutong-ai/mz-ph-ui",
-      "migration_state": "project-styles-decomposition-pending",
-      "project_contributors": [
-        {
-          "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
-          "canonical_path": "ops/public-web/studyroom-board.css",
-          "current_projection": "embedded-section"
-        }
-      ],
-      "rule": "generic design tokens may remain here; project-specific style sections must be published from project-owned canonical styles"
     }
   ]
 }

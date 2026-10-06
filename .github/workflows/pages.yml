@@ -10,6 +10,7 @@ on:
       - "studyroom.html"
       - "devices.html"
       - "style.css"
+      - "studyroom-board.css"
       - "entry.js"
       - "account.js"
       - "app.js"
@@ -45,7 +46,7 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          cp -- index.html workspace.html account.html studyroom.html devices.html style.css entry.js account.js app.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
+          cp -- index.html workspace.html account.html studyroom.html devices.html style.css studyroom-board.css entry.js account.js app.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
           if [ -f board-consumer.js ]; then
             cp -- board-consumer.js _site/
           fi
@@ -73,6 +74,7 @@ jobs:
               "studyroom.html",
               "devices.html",
               "style.css",
+              "studyroom-board.css",
               "entry.js",
               "account.js",
               "app.js",
