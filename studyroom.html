@@ -363,6 +363,30 @@ function srProjectDateOnly(value){
   const time=Date.parse(raw+"T00:00:00Z");
   return Number.isFinite(time)?{raw,time}:null;
 }
+function srProjectPlanStats(plan){
+  const milestones=Array.isArray(plan?.milestones)?plan.milestones:[];
+  const acceptance=Array.isArray(plan?.acceptance)?plan.acceptance:[];
+  const countStatus=(items,status)=>items.filter(item=>String(item?.status||"").toLowerCase()===status).length;
+  const attention=[
+    ...milestones.filter(item=>String(item?.status||"").toLowerCase()==="blocked")
+      .map(item=>"里程碑："+String(item?.title||item?.id||"未命名")),
+    ...acceptance.filter(item=>String(item?.status||"").toLowerCase()==="blocked")
+      .map(item=>"AC："+String(item?.title||item?.id||"未命名")),
+    ...milestones.filter(item=>String(item?.status||"").toLowerCase()==="in_progress")
+      .map(item=>"进行中："+String(item?.title||item?.id||"未命名")),
+    ...acceptance.filter(item=>String(item?.status||"").toLowerCase()==="in_progress")
+      .map(item=>"进行中 AC："+String(item?.title||item?.id||"未命名"))
+  ];
+  return {
+    milestoneTotal:milestones.length,
+    milestoneDone:countStatus(milestones,"done"),
+    milestoneBlocked:countStatus(milestones,"blocked"),
+    acceptanceTotal:acceptance.length,
+    acceptanceDone:countStatus(acceptance,"done"),
+    acceptanceBlocked:countStatus(acceptance,"blocked"),
+    attention
+  };
+}
 function srProjectPlanHtml(snapshot){
   const plan=srProjectPlan(snapshot);
   if(!plan){
@@ -371,6 +395,26 @@ function srProjectPlanHtml(snapshot){
   }
 
   const blocks=[];
+  const stats=srProjectPlanStats(plan);
+  const goalNumber=Number(plan.goal?.number);
+  const goalState=srProjectPlanStatus(plan.goal?.state);
+  const attention=stats.attention.length
+    ?stats.attention.slice(0,4).join(" · ")
+    :"当前 canonical plan 未标注受阻或进行中事项";
+  blocks.push('<div class="sr-project-grid">'
+    +'<div class="sr-project-card"><h3>Goal 状态</h3><strong>'
+    +esc(Number.isInteger(goalNumber)&&goalNumber>0?("Goal #"+goalNumber+" · "+goalState):goalState)
+    +'</strong><small>只读取项目仓显式 Goal 状态，不从 PR/CI 推断。</small></div>'
+    +'<div class="sr-project-card"><h3>里程碑完成</h3><strong>'
+    +esc("已完成 "+stats.milestoneDone+" / "+stats.milestoneTotal)
+    +'</strong><small>'+esc(stats.milestoneBlocked?("受阻 "+stats.milestoneBlocked+" 项"):"无明确受阻项")+'</small></div>'
+    +'<div class="sr-project-card"><h3>AC 完成</h3><strong>'
+    +esc("已完成 "+stats.acceptanceDone+" / "+stats.acceptanceTotal)
+    +'</strong><small>'+esc(stats.acceptanceBlocked?("受阻 "+stats.acceptanceBlocked+" 项"):"无明确受阻项")+'</small></div>'
+    +'<div class="sr-project-card"><h3>当前关注</h3><strong>'
+    +esc(stats.attention.length?("明确关注 "+stats.attention.length+" 项"):"暂无明确关注项")
+    +'</strong><small>'+esc(attention)+'</small></div>'
+    +'</div>');
   if(plan.goal){
     const goalTitle=String(plan.goal.title||("Goal #"+String(plan.goal.number||"")));
     const goalUrl=String(plan.goal.url||"");
