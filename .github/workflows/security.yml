@@ -206,7 +206,7 @@ jobs:
               ".nojekyll",
               "README.md",
               "SECURITY.md",
-              "AGENTS.md", "studyroom.html", "PUBLIC_ARTIFACT_PROVENANCE.json",
+              "AGENTS.md", "studyroom.html", "studyroom-board.css", "PUBLIC_ARTIFACT_PROVENANCE.json",
               "index.html",
               "workspace.html",
               "account.html",
@@ -239,9 +239,20 @@ jobs:
           artifacts = provenance.get("artifacts")
           if not isinstance(artifacts, list) or len(artifacts) < 2:
               raise SystemExit("public artifact provenance must declare project-owned mirrors")
-          expected_provenance = {
+          expected_provenance_v1 = {
               ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
                   "studyroom.html", "board-consumer.js"
+              },
+              ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
+                  "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
+              },
+          }
+          expected_provenance_v2 = {
+              ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
+                  "studyroom.html", "board-consumer.js", "studyroom-board.css",
+                  "assets/characters/bi.png", "assets/characters/mo.png",
+                  "assets/characters/zhi.png", "assets/characters/yan.png",
+                  "assets/characters/juan.png", "assets/characters/xia.png",
               },
               ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
                   "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
@@ -253,12 +264,12 @@ jobs:
                   raise SystemExit("public artifact provenance entry must be an object")
               key = (item.get("canonical_repository"), item.get("canonical_root"))
               paths = item.get("public_paths")
-              if key not in expected_provenance or not isinstance(paths, list):
+              if key not in expected_provenance_v2 or not isinstance(paths, list):
                   raise SystemExit("unapproved public artifact provenance owner")
               seen_provenance[key] = set(paths)
               if item.get("publication_mode") not in {"mirror", "generated"}:
                   raise SystemExit("public artifact provenance publication mode invalid")
-          if seen_provenance != expected_provenance:
+          if seen_provenance != expected_provenance_v1 and seen_provenance != expected_provenance_v2:
               raise SystemExit("public artifact provenance paths drifted from approved project ownership")
 
           repo_text_parts = []
