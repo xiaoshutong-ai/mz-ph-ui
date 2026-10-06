@@ -228,6 +228,39 @@ jobs:
           if any(rel.startswith("supabase/") for rel, _path in tracked):
               raise SystemExit("server-side Supabase source is forbidden in public repository")
 
+          # Project-specific public files are mirrors/generated artifacts only.
+          import json as _provenance_json
+          provenance_path = Path("PUBLIC_ARTIFACT_PROVENANCE.json")
+          if not provenance_path.exists():
+              raise SystemExit("public artifact provenance manifest is required")
+          provenance = _provenance_json.loads(provenance_path.read_text(encoding="utf-8"))
+          if provenance.get("schema_version") != 1 or provenance.get("policy") != "project-facts-follow-project":
+              raise SystemExit("public artifact provenance identity mismatch")
+          artifacts = provenance.get("artifacts")
+          if not isinstance(artifacts, list) or len(artifacts) < 2:
+              raise SystemExit("public artifact provenance must declare project-owned mirrors")
+          expected_provenance = {
+              ("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web"): {
+                  "studyroom.html", "board-consumer.js"
+              },
+              ("xiaoshutong-ai/xiaoshutong-fuzipartner", "ops/public-distribution"): {
+                  "updates/fuzi/latest.json", "updates/fuzi/v2/policy.json"
+              },
+          }
+          seen_provenance = {}
+          for item in artifacts:
+              if not isinstance(item, dict):
+                  raise SystemExit("public artifact provenance entry must be an object")
+              key = (item.get("canonical_repository"), item.get("canonical_root"))
+              paths = item.get("public_paths")
+              if key not in expected_provenance or not isinstance(paths, list):
+                  raise SystemExit("unapproved public artifact provenance owner")
+              seen_provenance[key] = set(paths)
+              if item.get("publication_mode") not in {"mirror", "generated"}:
+                  raise SystemExit("public artifact provenance publication mode invalid")
+          if seen_provenance != expected_provenance:
+              raise SystemExit("public artifact provenance paths drifted from approved project ownership")
+
           repo_text_parts = []
           for rel, path in tracked:
               if rel in character_assets:
