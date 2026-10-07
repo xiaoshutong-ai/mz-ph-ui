@@ -14,6 +14,7 @@ on:
       - "entry.js"
       - "account.js"
       - "app.js"
+      - "ops-session.js"
       - "board-consumer.js"
       - "PUBLIC_ARTIFACT_PROVENANCE.json"
       - "assets/characters/**"
@@ -46,7 +47,7 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          cp -- index.html workspace.html account.html studyroom.html devices.html style.css studyroom-board.css entry.js account.js app.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
+          cp -- index.html workspace.html account.html studyroom.html devices.html style.css studyroom-board.css entry.js account.js app.js ops-session.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
           if [ -f board-consumer.js ]; then
             cp -- board-consumer.js _site/
           fi
@@ -78,6 +79,7 @@ jobs:
               "entry.js",
               "account.js",
               "app.js",
+              "ops-session.js",
               "board-consumer.js",
               "PUBLIC_ARTIFACT_PROVENANCE.json",
               ".nojekyll",

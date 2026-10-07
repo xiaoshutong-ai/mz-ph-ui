@@ -99,7 +99,7 @@
 <button class="steward-side-nav-btn" type="button" data-sr="srDevices">设备管理</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srCodes">预设邀请码</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srChat">六席对话</button>
-<button class="steward-side-nav-btn" type="button" data-sr="srAgents">实时看板</button>
+<button class="steward-side-nav-btn" type="button" data-sr="srAgents">六席态势</button>
 <button class="steward-side-nav-btn" type="button" data-sr="srProject">项目事实</button>
 </nav>
 <div class="steward-side-motto">
@@ -108,7 +108,7 @@
 </div>
 <div class="steward-side-actions">
 <button class="ghost steward-side-exit" type="button" onclick="location.href='workspace.html'">返回项目运维</button>
-<button class="ghost steward-side-exit" type="button" onclick="location.href='workspace.html'">退出登录</button>
+<button class="ghost steward-side-exit" type="button" onclick="logoutStudyroom()">退出登录</button>
 </div>
 </aside>
 
@@ -126,6 +126,31 @@
 
 <!-- 总览 -->
 <div id="srOverview" class="sr-section active">
+<section class="sr-overview-agents" aria-labelledby="srOverviewAgentsTitle">
+  <div class="sr-board-hero">
+    <div class="sr-board-hero-copy">
+      <div class="sr-board-kicker-row">
+        <span class="sr-board-kicker">院务态势</span>
+        <span class="sr-board-live"><i aria-hidden="true"></i>事件驱动</span>
+      </div>
+      <h2 id="srOverviewAgentsTitle">六席当前态势</h2>
+      <p>先看谁在做什么、谁受阻、最近发生了什么；没有新工作时记录保持不动。</p>
+    </div>
+    <div class="sr-board-actions">
+      <div class="sr-board-readout">
+        <span>最近读取</span>
+        <strong id="srOverviewAgentState" role="status" aria-live="polite">等待首次读取</strong>
+      </div>
+      <button id="srOverviewAgentsOpen" class="sr-btn sr-board-refresh" type="button">进入六席态势</button>
+    </div>
+  </div>
+  <div id="srOverviewAgentOverview" class="sr-board-overview">
+    <div class="sr-project-empty">尚未读取六席状态。</div>
+  </div>
+</section>
+
+<section class="sr-overview-secondary" aria-label="应用与设备">
+  <span class="sr-board-kicker">应用与设备</span>
 <div class="sr-stat-grid">
 <div class="sr-stat"><div class="v" id="stAppVer">—</div><div class="k">App 最新版本</div></div>
 <div class="sr-stat"><div class="v" id="stDevTotal">—</div><div class="k">连接设备</div></div>
@@ -133,6 +158,7 @@
 <div class="sr-stat"><div class="v" id="stDevPending">—</div><div class="k">待邀请码</div></div>
 </div>
 <p class="muted">版本发布：<a id="stApkLink" href="#" target="_blank">下载最新 APK</a> · <span id="stChangelog"></span></p>
+</section>
 <section class="sr-project-section" aria-labelledby="srOverviewProjectHealthTitle">
   <div class="sr-project-hero">
     <div>
@@ -182,10 +208,8 @@
 <span id="srChatProviderState" class="muted"></span>
 </div>
 <div id="srChatStatus" class="muted" style="margin:8px 0"></div>
-<div class="sr-chat-wrap">
-<table class="sr-table"><thead><tr>
-<th>席位</th><th>运行模式</th><th>Muse 会话</th><th>API Provider</th><th>模型覆盖</th><th>Memory</th><th>SOUL 覆盖</th><th>Character Contract</th><th>操作</th>
-</tr></thead><tbody id="srChatConfigList"><tr><td colspan="9" class="muted">请选择设备</td></tr></tbody></table>
+<div id="srChatConfigList" class="sr-chat-grid">
+  <div class="sr-chat-empty">请选择设备</div>
 </div>
 </div>
 
@@ -264,52 +288,43 @@
 </section>
 </div>
 
+<script src="./ops-session.js"></script>
 <script src="./board-consumer.js"></script>
 <script>
-const SB_URL = "https://ftcyyvyoowkctbupzkct.supabase.co";
-const SB_ANON = "sb_publishable_vsp2sdBNKkqGh97lTvJRFg_Bmk7fNdO";
+const OpsSession=window.MzOpsSession;
+if(!OpsSession) throw new Error("OPS_SESSION_UNAVAILABLE");
+const SB_URL=OpsSession.baseUrl;
+const SB_ANON=OpsSession.publishableKey;
 
-let _srAccessToken = null;
 async function getToken(){
-  if(_srAccessToken) return _srAccessToken;
-  // 用 workspace 存在 sessionStorage 的 refresh_token 换 access_token（只放内存，不落盘）
-  const rt = sessionStorage.getItem("mz_ops_refresh_token");
-  if(!rt) return null;
-  try{
-    const r = await fetch(SB_URL + "/auth/v1/token?grant_type=refresh_token", {
-      method: "POST",
-      headers: {"apikey": SB_ANON, "Content-Type": "application/json"},
-      body: JSON.stringify({refresh_token: rt})
-    });
-    if(!r.ok) return null;
-    const j = await r.json();
-    _srAccessToken = j.access_token || null;
-    return _srAccessToken;
-  }catch(e){ return null; }
+  return OpsSession.getAccessToken();
 }
 async function api(path, method, body){
-  const token = await getToken(); if(!token) throw new Error("未登录");
-  const r = await fetch(SB_URL + path, {
+  const r = await OpsSession.fetch(SB_URL + path, {
     method: method||"GET",
-    headers: {"apikey": SB_ANON, "Authorization": "Bearer "+token, "Content-Type": "application/json", "Prefer": "return=representation"},
+    headers: {"Content-Type": "application/json", "Prefer": "return=representation"},
     body: body ? JSON.stringify(body) : undefined
   });
   if(!r.ok) throw new Error("HTTP "+r.status);
   const t = await r.text(); return t ? JSON.parse(t) : null;
 }
 async function opsApi(action, method, body, extra){
-  const token = await getToken(); if(!token) throw new Error("未登录");
   const q = new URLSearchParams({action: action, project: "xiaoshutong"});
   Object.entries(extra||{}).forEach(([k,v]) => { if(v!=null && v!=="") q.set(k, String(v)); });
-  const r = await fetch(SB_URL + "/functions/v1/p2-ai-provider-admin?" + q.toString(), {
+  const r = await OpsSession.fetch(SB_URL + "/functions/v1/p2-ai-provider-admin?" + q.toString(), {
     method: method||"GET",
-    headers: {"apikey": SB_ANON, "Authorization": "Bearer "+token, "Content-Type": "application/json"},
+    headers: {"Content-Type": "application/json"},
     body: body ? JSON.stringify(body) : undefined
   });
   const t = await r.text();
   let j = null; try{ j = t ? JSON.parse(t) : null; }catch(e){}
   if(!r.ok || !j?.ok) throw new Error(j?.error || ("HTTP "+r.status));
   return j;
+}
+async function logoutStudyroom(){
+  document.getElementById("srApp").style.display="none";
+  try{ await OpsSession.logout(); }
+  finally{ location.replace("workspace.html"); }
 }
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 
@@ -942,7 +957,7 @@ async function loadStudyroomChatConfig(){
   const tb = document.getElementById("srChatConfigList");
   const status = document.getElementById("srChatStatus");
   if(!deviceId){
-    tb.innerHTML = '<tr><td colspan="7" class="muted">请选择设备</td></tr>';
+    tb.innerHTML = '<div class="sr-chat-empty">请选择设备</div>';
     status.textContent = "";
     return;
   }
@@ -968,37 +983,49 @@ async function loadStudyroomChatConfig(){
       const sideAvailable = c.muse_side_available === true;
       const contract = c.character_contract || {};
       const contractText = JSON.stringify(contract,null,2);
-      return "<tr>"
-        +"<td><strong>"+esc(c.display_name||cid)+"</strong><br><span class='muted'>"+esc(cid)+"</span>"
-        +(c.has_override?"<br><span class='sr-badge warn'>设备覆盖</span>":"<br><span class='sr-badge ok'>默认</span>")+"</td>"
-        +"<td><select id='srMode-"+cid+"' "+(muse?"":"disabled")+">"
-          +"<option value='API'"+srSelected(mode,"API")+">API</option>"
-          +(muse?"<option value='MUSE'"+srSelected(mode,"MUSE")+">Muse</option>":"")
-          +"</select>"+(muse?"":"<div class='muted' style='font-size:11px'>"+(cid==="xia"?"匣固定 API":"需先启用 Owner Muse 信任")+"</div>")+"</td>"
-        +"<td><select id='srTransport-"+cid+"' "+(muse?"":"disabled")+">"
-          +"<option value='MAIN'"+srSelected(transport,"MAIN")+">主对话 · 原话直通</option>"
-          +"<option value='SIDE'"+srSelected(transport,"SIDE")+(sideAvailable?"":" disabled")+">旁聊天 · SOUL/Memory</option>"
-          +"</select><div class='muted' style='font-size:11px'>"+(sideAvailable?"可切换":"旁聊天运行器接入中")+"</div></td>"
-        +"<td><select id='srProvider-"+cid+"'>"
-          +"<option value='inherit'"+srSelected(provider,"inherit")+">跟随 Provider Hub</option>"
-          +"<option value='zhipuai'"+srSelected(provider,"zhipuai")+">GLM / ZhipuAI</option>"
-          +"<option value='deepseek'"+srSelected(provider,"deepseek")+">DeepSeek</option>"
-          +"</select></td>"
-        +"<td><input class='sr-small-input' id='srModel-"+cid+"' maxlength='128' value='"+esc(model)+"' placeholder='留空=Provider 默认模型'></td>"
-        +"<td style='text-align:center'><input id='srMemory-"+cid+"' type='checkbox' style='width:auto' "+(c.memory_enabled!==false?"checked":"")+"><div class='muted' style='font-size:11px'>保存连续对话</div></td>"
-        +"<td><textarea id='srSoul-"+cid+"' maxlength='6000' placeholder='留空=默认 SOUL'>"+esc(soul)+"</textarea>"
-          +"<div class='muted' style='font-size:11px' title='"+esc(defaultSoul)+"'>默认："+esc(defaultSoul.slice(0,44))+(defaultSoul.length>44?"…":"")+"</div></td>"
-        +"<td><details><summary>Contract v"+esc(contract.contract_version||1)+"</summary><pre style='white-space:pre-wrap;max-width:320px;font-size:11px'>"+esc(contractText)+"</pre></details></td>"
-        +"<td><button class='sr-btn primary' onclick=\"saveStudyroomCharacter('"+cid+"')\">保存</button>"
-          +"<button class='sr-btn' onclick=\"resetStudyroomCharacter('"+cid+"')\">恢复默认</button></td>"
-        +"</tr>";
-    }).join("") || '<tr><td colspan="9" class="muted">暂无配置</td></tr>';
+      const modeHelp = muse ? "API / Muse 可切换" : (cid==="xia" ? "匣固定 API" : "需先启用 Owner Muse 信任");
+      return "<article class='sr-chat-card'>"
+        +"<header class='sr-chat-card-head'><div class='sr-chat-person'>"
+          +"<img src='./assets/characters/"+esc(cid)+".png' alt='' aria-hidden='true'>"
+          +"<div><strong>"+esc(c.display_name||cid)+"</strong><span>"+esc(cid)+"</span></div></div>"
+          +"<div class='sr-chat-badges'>"
+            +(c.has_override?"<span class='sr-badge warn'>设备覆盖</span>":"<span class='sr-badge ok'>默认</span>")
+            +(muse?"<span class='sr-badge ok'>Muse 可用</span>":"<span class='sr-badge'>API</span>")
+          +"</div></header>"
+        +"<div class='sr-chat-primary-grid'>"
+          +"<label><span>运行模式</span><select id='srMode-"+cid+"' "+(muse?"":"disabled")+">"
+            +"<option value='API'"+srSelected(mode,"API")+">API</option>"
+            +(muse?"<option value='MUSE'"+srSelected(mode,"MUSE")+">Muse</option>":"")
+            +"</select><small>"+esc(modeHelp)+"</small></label>"
+          +"<label><span>Muse 会话</span><select id='srTransport-"+cid+"' "+(muse?"":"disabled")+">"
+            +"<option value='MAIN'"+srSelected(transport,"MAIN")+">主对话 · 原话直通</option>"
+            +"<option value='SIDE'"+srSelected(transport,"SIDE")+(sideAvailable?"":" disabled")+">旁聊天 · SOUL/Memory</option>"
+            +"</select><small>"+(sideAvailable?"可切换到旁聊天":"旁聊天运行器接入中")+"</small></label>"
+        +"</div>"
+        +"<details class='sr-chat-advanced'><summary>高级设置</summary><div class='sr-chat-advanced-grid'>"
+          +"<label><span>API Provider</span><select id='srProvider-"+cid+"'>"
+            +"<option value='inherit'"+srSelected(provider,"inherit")+">跟随 Provider Hub</option>"
+            +"<option value='zhipuai'"+srSelected(provider,"zhipuai")+">GLM / ZhipuAI</option>"
+            +"<option value='deepseek'"+srSelected(provider,"deepseek")+">DeepSeek</option>"
+            +"</select></label>"
+          +"<label><span>模型覆盖</span><input class='sr-small-input' id='srModel-"+cid+"' maxlength='128' value='"+esc(model)+"' placeholder='留空=Provider 默认模型'></label>"
+          +"<label class='sr-chat-memory'><span>Memory</span><span class='sr-chat-check'><input id='srMemory-"+cid+"' type='checkbox' "+(c.memory_enabled!==false?"checked":"")+">保存连续对话</span></label>"
+          +"<label class='sr-chat-soul'><span>SOUL 覆盖</span><textarea id='srSoul-"+cid+"' maxlength='6000' placeholder='留空=默认 SOUL'>"+esc(soul)+"</textarea>"
+            +"<small title='"+esc(defaultSoul)+"'>默认："+esc(defaultSoul.slice(0,72))+(defaultSoul.length>72?"…":"")+"</small></label>"
+          +"<details class='sr-chat-contract'><summary>Character Contract v"+esc(contract.contract_version||1)+"</summary>"
+            +"<pre>"+esc(contractText)+"</pre></details>"
+        +"</div></details>"
+        +"<footer class='sr-chat-card-actions'><button class='sr-btn primary' onclick=\"saveStudyroomCharacter('"+cid+"')\">保存</button>"
+          +"<button class='sr-btn' onclick=\"resetStudyroomCharacter('"+cid+"')\">恢复默认</button></footer>"
+        +"</article>";
+    }).join("") || '<div class="sr-chat-empty">暂无配置</div>';
     status.textContent = "当前设备："+String(cfg.device?.nickname||cfg.device?.device_name||deviceId);
   }catch(e){
-    tb.innerHTML = '<tr><td colspan="9" class="muted">读取失败</td></tr>';
+    tb.innerHTML = '<div class="sr-chat-empty">读取失败</div>';
     status.textContent = "读取失败："+e.message;
   }
 }
+
 async function saveStudyroomMuseTrust(){
   const deviceId = document.getElementById("srChatDevice").value;
   if(!deviceId) return;
@@ -1073,12 +1100,12 @@ async function resetStudyroomCharacter(cid){
   }
 }
 
-// 六席实时看板：直接留在水墨书院，复用 board-consumer.js 与 agent_status。
+// 六席态势：直接留在水墨书院，复用 board-consumer.js 与 agent_status。
 const SR_AGENT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
 const SR_AGENT_CONTROL_PATH="/functions/v1/studyroom-agent-control";
 const SR_AGENT_FOLLOWUP_MS=2000;
 const SR_AGENT_FOLLOWUP_LIMIT=6;
-const SR_AGENT_STATE_POLL_MS=60000;
+const SR_AGENT_STATE_POLL_MS=300000;
 let _srAgentRows=[],_srAgentSnapshot=null,_srAgentActivity=null,_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
 let _srAgentFollowupTimer=null,_srAgentFollowupRemaining=0,_srAgentFollowupRequestedAt=0,_srAgentFollowupAgents=[];
 
@@ -1163,7 +1190,7 @@ function srSnapshotShortLabel(snapshot){
 }
 
 function syncSrAgentSelection(){
-  document.querySelectorAll("#srAgentOverview [data-agent]").forEach(button=>{
+  document.querySelectorAll("#srAgentOverview [data-agent],#srOverviewAgentOverview [data-agent]").forEach(button=>{
     const active=button.dataset.agent===_srAgentSelected;
     button.classList.toggle("is-selected",active);
     button.setAttribute("aria-pressed",active?"true":"false");
@@ -1190,15 +1217,22 @@ function renderSrAgentPersonal(id){
   try{panel.scrollIntoView({block:"start"});}catch(_e){}
 }
 
+function setSrAgentReadout(text){
+  for(const id of ["srAgentState","srOverviewAgentState"]){
+    const node=document.getElementById(id);
+    if(node)node.textContent=text;
+  }
+}
 function applySrAgentRows(value,snapshot){
   const rows=BoardConsumer.validateControlRows(value,SR_AGENT_NAMES);
   _srAgentRows=rows;
   _srAgentSnapshot=normalizeSrAgentSnapshot(snapshot);
   _srAgentReadAt=Date.now();
   const snapshotText=srSnapshotMeta(_srAgentSnapshot);
-  document.getElementById("srAgentOverview").innerHTML=BoardConsumer.renderControlOverview(
-    rows,SR_AGENT_NAMES,snapshotText
-  );
+  const overviewHtml=BoardConsumer.renderControlOverview(rows,SR_AGENT_NAMES,snapshotText);
+  document.getElementById("srAgentOverview").innerHTML=overviewHtml;
+  const overview=document.getElementById("srOverviewAgentOverview");
+  if(overview)overview.innerHTML=overviewHtml;
   document.getElementById("srAgentMeta").textContent=
     snapshotText+"。工作状态采用事件驱动：有变化才写，没有新工作就保持最近记录；页面读取不会制造工作事件。";
   if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
@@ -1324,18 +1358,20 @@ async function loadAgents(){
     const rows=applySrAgentRows(value.agents,value.snapshot);
     renderSrAgentActivity(value.history);
     if(maybeFinishSrAgentFollowup(rows)){
-      document.getElementById("srAgentState").textContent=
-        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+      setSrAgentReadout(
+        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false})
+      );
     }else{
-      document.getElementById("srAgentState").textContent=
-        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+      setSrAgentReadout(
+        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false})
+      );
     }
   }catch(e){
     _srAgentRows=[];
     _srAgentReadAt=0;
     document.getElementById("srAgentOverview").innerHTML="";
     document.getElementById("srAgentMeta").textContent="当前无法读取六席状态，请稍后重试。";
-    document.getElementById("srAgentState").textContent="读取失败 · "+(e.message||e);
+    setSrAgentReadout("读取失败 · "+(e.message||e));
     document.getElementById("srAgentPersonal").classList.add("hidden");
     clearSrAgentFollowup();
   }finally{
@@ -1357,14 +1393,15 @@ async function refreshAgents(){
     const rows=applySrAgentRows(value.agents,value.snapshot);
     const active=Array.isArray(value.refresh?.active_agents)?value.refresh.active_agents.length:0;
     const passive=Array.isArray(value.refresh?.passive_agents)?value.refresh.passive_agents.join("、"):"";
-    document.getElementById("srAgentState").textContent=
+    setSrAgentReadout(
       "已请求 "+active+" 席按需状态同步"
       +(passive?" · "+passive+" 保持被动同步":"")
-      +" · 只读，不制造后台心跳";
+      +" · 只读，不制造后台心跳"
+    );
     renderSrAgentActivity(value.history);
     startSrAgentFollowup(value.refresh,rows);
   }catch(e){
-    document.getElementById("srAgentState").textContent="刷新失败 · "+(e.message||e);
+    setSrAgentReadout("刷新失败 · "+(e.message||e));
     clearSrAgentFollowup();
   }finally{
     _srAgentsLoading=false;
@@ -1376,6 +1413,17 @@ async function refreshAgents(){
 document.getElementById("srAgentOverview").addEventListener("click",event=>{
   const button=event.target&&event.target.closest?event.target.closest("[data-agent]"):null;
   if(button&&button.dataset.agent) renderSrAgentPersonal(button.dataset.agent);
+});
+document.getElementById("srOverviewAgentOverview").addEventListener("click",event=>{
+  const button=event.target&&event.target.closest?event.target.closest("[data-agent]"):null;
+  if(!button||!button.dataset.agent)return;
+  const boardNav=document.querySelector('[data-sr="srAgents"]');
+  if(boardNav)boardNav.click();
+  renderSrAgentPersonal(button.dataset.agent);
+});
+document.getElementById("srOverviewAgentsOpen").addEventListener("click",()=>{
+  const boardNav=document.querySelector('[data-sr="srAgents"]');
+  if(boardNav)boardNav.click();
 });
 document.getElementById("srAgentRefresh").addEventListener("click",()=>refreshAgents());
 document.getElementById("srAgentPersonalRefresh").addEventListener("click",()=>loadAgents());
@@ -1389,16 +1437,20 @@ document.getElementById("srAgentPersonalClose").addEventListener("click",()=>{
   document.getElementById("srAgentPersonal").classList.add("hidden");
   syncSrAgentSelection();
 });
+function srAgentSurfaceActive(){
+  return ["srOverview","srAgents"].some(id=>document.getElementById(id)?.classList.contains("active"));
+}
 function ensureSrAgentTimer(){
   if(_srAgentTimer) return;
   _srAgentTimer=setInterval(()=>{
-    const section=document.getElementById("srAgents");
-    if(!document.hidden&&section&&section.classList.contains("active")) loadAgents();
+    if(!document.hidden&&srAgentSurfaceActive()) loadAgents();
   },SR_AGENT_STATE_POLL_MS);
 }
 document.addEventListener("visibilitychange",()=>{
-  const section=document.getElementById("srAgents");
-  if(!document.hidden&&section&&section.classList.contains("active")) loadAgents();
+  if(!document.hidden&&srAgentSurfaceActive()) loadAgents();
+});
+window.addEventListener("focus",()=>{
+  if(!document.hidden&&srAgentSurfaceActive()&&Date.now()-_srAgentReadAt>30000) loadAgents();
 });
 
 function refreshAll(){
@@ -1410,14 +1462,12 @@ function refreshAll(){
 }
 
 (function(){
-  getToken().then(t=>{
-    if(!t){
-      document.getElementById("srLoginGate").style.display = "";
-    }else{
-      document.getElementById("srApp").style.display = "";
-      refreshAll();
-      loadProjectEvidence(false);
-    }
+  getToken().then(()=>{
+    document.getElementById("srApp").style.display = "";
+    refreshAll();
+    loadProjectEvidence(false);
+  }).catch(()=>{
+    document.getElementById("srLoginGate").style.display = "";
   });
 })();
 </script>
