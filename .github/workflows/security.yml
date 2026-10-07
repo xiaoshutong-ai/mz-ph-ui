@@ -1087,6 +1087,8 @@ jobs:
               'sessionStorage.removeItem(REFRESH_STORAGE_KEY)',
               'response.status===401&&retry401',
               'function clearAccessToken()',
+              'function setAccessToken(value)',
+              'if(!forceRefresh&&accessToken)return accessToken',
               'global.addEventListener("pagehide",clearAccessToken)',
               '/auth/v1/logout',
               'keepalive:true',
@@ -1100,6 +1102,8 @@ jobs:
               'OPS_SESSION.fetch',
               'OPS_SESSION.logout',
               'OPS_SESSION.clearAccessToken',
+              'OPS_SESSION.setAccessToken(accessToken)',
+              'OPS_SESSION.setAccessToken(elevatedToken)',
           ):
               if marker not in app:
                   raise SystemExit("workspace shared-session delegation missing: " + marker)
@@ -1173,6 +1177,16 @@ jobs:
           node --check app.js
           node --check ops-session.js
           node --check board-consumer.js
+          python3 - <<'PY'
+          from pathlib import Path
+          pages = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
+          for marker in (
+              '"ops-session.js"',
+              'app.js ops-session.js PUBLIC_ARTIFACT_PROVENANCE.json',
+          ):
+              if marker not in pages:
+                  raise SystemExit("Pages shared session deployment contract missing: " + marker)
+          PY
           python3 - <<'PY'
           from pathlib import Path
           import re
