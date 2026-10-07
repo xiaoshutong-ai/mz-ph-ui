@@ -1093,6 +1093,11 @@ jobs:
                   'response.status===401&&retry401',
                   'function clearAccessToken()',
                   'function setAccessToken(value)',
+                  'let sessionGeneration=0',
+                  'sessionGeneration++',
+                  'refreshPromise=null',
+                  'const generation=sessionGeneration',
+                  'if(generation!==sessionGeneration)throw authRequiredError("会话已变更")',
                   'if(!forceRefresh&&accessToken)return accessToken',
                   'global.addEventListener("pagehide",clearAccessToken)',
                   '/auth/v1/logout',
@@ -1207,6 +1212,48 @@ jobs:
             node --check ops-session.js
           fi
           node --check board-consumer.js
+          if [ -f ops-session.js ]; then
+            node <<'NODE'
+          const assert=require("node:assert/strict");
+          const fs=require("node:fs");
+          const vm=require("node:vm");
+
+          const store=new Map([
+            ["mz_ops_refresh_token","refresh-old"],
+            ["mz_ops_session_started_at",String(Date.now())],
+          ]);
+          let releaseRefresh;
+          const refreshResponse=new Promise(resolve=>{releaseRefresh=resolve;});
+          const context={
+            Headers,
+            sessionStorage:{
+              getItem:key=>store.has(key)?store.get(key):null,
+              setItem:(key,value)=>store.set(key,String(value)),
+              removeItem:key=>store.delete(key),
+            },
+            fetch:async url=>{
+              if(String(url).includes("grant_type=refresh_token"))return refreshResponse;
+              return {ok:true,status:200,json:async()=>({})};
+            },
+            window:{addEventListener(){}},
+          };
+          vm.createContext(context);
+          vm.runInContext(fs.readFileSync("ops-session.js","utf8"),context);
+          const session=context.window.MzOpsSession;
+          const pending=session.refreshAccessToken();
+          await session.logout();
+          releaseRefresh({
+            ok:true,
+            status:200,
+            json:async()=>({access_token:"stale-access",refresh_token:"stale-refresh"}),
+          });
+          await assert.rejects(pending,error=>error?.code==="AUTH_REQUIRED");
+          assert.equal(session.currentAccessToken(),"");
+          assert.equal(store.has("mz_ops_refresh_token"),false);
+          assert.equal(store.has("mz_ops_session_started_at"),false);
+          console.log("OPS_SESSION_LOGOUT_RACE=PASS");
+          NODE
+          fi
           python3 - <<'PY'
           from pathlib import Path
           if Path("ops-session.js").exists():
