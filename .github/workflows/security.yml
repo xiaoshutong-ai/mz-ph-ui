@@ -1289,7 +1289,9 @@ jobs:
           assert.match(room,/BoardConsumer\.renderControlOverview/);
           assert.match(room,/SR_AGENT_FOLLOWUP_LIMIT=6/);
           assert.match(room,/SR_AGENT_STATE_POLL_MS=60000/);
-          assert.match(room,/agentControlApi\("activity_day"\)/);
+          assert.match(room,/const value=await agentControlApi\("state"\)/);
+          assert.match(room,/renderSrAgentActivity\(value\.history\)/);
+          assert.doesNotMatch(room,/agentControlApi\("activity_day"\)/);
           assert.doesNotMatch(room,/SR_AGENT_STATE_POLL_MS=10000/);
           assert.doesNotMatch(room,/\/rest\/v1\/agent_status\?select=/);
           const all=room.slice(room.indexOf("function refreshAll(){"),room.indexOf("(function(){",room.indexOf("function refreshAll(){")));
