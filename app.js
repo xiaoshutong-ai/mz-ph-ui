@@ -475,7 +475,7 @@ function consumePasswordSetupCallback(){
 
   clearOperationsSessionStorage();
   passwordSetupMode=type;
-  token=accessToken;
+  token=OPS_SESSION.setAccessToken(accessToken);
   history.replaceState(null,"",window.location.pathname+window.location.search);
   return true;
 }
@@ -498,6 +498,7 @@ async function preparePasswordSetup(){
     $("newPassword").focus();
   }catch(error){
     token="";
+    OPS_SESSION.clearAccessToken();
     passwordSetupMode="";
     history.replaceState(null,"",window.location.pathname+window.location.search);
     setAuthStage("login");
@@ -530,6 +531,7 @@ async function completePasswordSetup(){
     $("newPassword").value="";
     $("confirmPassword").value="";
     token="";
+    OPS_SESSION.clearAccessToken();
     passwordSetupMode="";
       history.replaceState(null,"",window.location.pathname+window.location.search);
     setAuthStage("login");
@@ -2952,25 +2954,29 @@ async function api(action,method="GET",body=null,query={},retry=true,currentRequ
   for(const [key,value] of Object.entries(query||{})){
     if(value!==undefined&&value!==null&&String(value)!=="")params.set(key,String(value));
   }
-  const response=await fetch(FN+"?"+params.toString(),{
-    method,
-    headers:{
-      Authorization:"Bearer "+token,
-      "Content-Type":"application/json"
-    },
-    body:body?JSON.stringify(body):null
-  });
+  let response;
+  try{
+    response=await OPS_SESSION.fetch(FN+"?"+params.toString(),{
+      method,
+      headers:{"Content-Type":"application/json"},
+      body:body?JSON.stringify(body):null
+    },{retry401:retry});
+    token=OPS_SESSION.currentAccessToken();
+  }catch(error){
+    ensureCurrentContext();
+    if(error?.code==="AUTH_REQUIRED"||error?.status===401){
+      clearOperationsSessionStorage();
+      clearSensitiveBrowserState();
+      setAuthStage("login");
+    }
+    throw error;
+  }
   let value={};
   try{value=await response.json()}catch(_e){}
   ensureCurrentContext();
-  if(response.status===401&&retry){
-    const refreshed=await refreshAccessTokenFromStoredSession();
-    ensureCurrentContext();
-    if(refreshed)return api(action,method,body,query,false,currentRequest);
-  }
   if(response.status===401){
     clearOperationsSessionStorage();
-    token="";
+    clearSensitiveBrowserState();
     clearAgentStatusOps(); /* 跨路径：其他 ops API 401 也清看板残留（list/个人面板/title/pending/timer/generation），不新增网络/权限行为 */
     setAuthStage("login");
     const error=new Error("身份验证失败或会话已失效");
@@ -3625,8 +3631,8 @@ async function verifyBackupTotp(){
     );
     const elevatedToken=verified?.access_token||verified?.session?.access_token||"";
     if(elevatedToken){
-      token=elevatedToken;
-      }
+      token=OPS_SESSION.setAccessToken(elevatedToken);
+    }
 
     backupTotpFactorId="";
     $("backupTotpPanel").classList.add("hidden");
