@@ -939,7 +939,7 @@
 .sr-chat-primary-grid,.sr-chat-advanced-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:13px}
 .sr-chat-card label{display:grid;gap:5px;min-width:0;color:var(--sr-text-mid);font-size:10px;font-weight:750}
 .sr-chat-card label>span:first-child{color:var(--sr-text-soft)}
-.sr-chat-card select,.sr-chat-card input,.sr-chat-card textarea{box-sizing:border-box;width:100%;border:1px solid var(--sr-border);border-radius:9px;background:#fff;color:var(--sr-title);padding:8px 9px;font:inherit}
+.sr-chat-card select,.sr-chat-card input,.sr-chat-card textarea{box-sizing:border-box;width:100%;border:1px solid var(--sr-border);border-radius:9px;background:var(--sr-white);color:var(--sr-title);padding:8px 9px;font:inherit}
 .sr-chat-card small{color:var(--sr-text-faint);font-size:8.5px;line-height:1.45;font-weight:500}
 .sr-chat-advanced{margin-top:12px;border-top:1px solid var(--sr-border-soft);padding-top:10px}
 .sr-chat-advanced>summary,.sr-chat-contract>summary{cursor:pointer;color:var(--sr-jade-deep);font-size:10px;font-weight:850}
