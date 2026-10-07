@@ -120,7 +120,7 @@
 <p>六位住户的身心安放之所 · 设备与状态一目了然</p>
 </div>
 <div class="steward-header-controls">
-<button class="sr-btn" type="button" onclick="refreshAll();loadProjectEvidence(true)">刷新</button>
+<button class="sr-btn" type="button" onclick="refreshAll(true);loadProjectEvidence(true)">刷新</button>
 </div>
 </header>
 
@@ -1453,11 +1453,12 @@ window.addEventListener("focus",()=>{
   if(!document.hidden&&srAgentSurfaceActive()&&Date.now()-_srAgentReadAt>30000) loadAgents();
 });
 
-function refreshAll(){
+function refreshAll(syncAgents=false){
   loadOverview();
   loadDevices();
   loadPresetCodes();
-  loadAgents();
+  if(syncAgents) refreshAgents();
+  else loadAgents();
   ensureSrAgentTimer();
 }
 

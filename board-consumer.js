@@ -690,18 +690,27 @@ function controlTask(row){
   };
 }
 
+function activeControlClaim(row){
+  return row?.activity_state==="busy"||row?.activity_state==="blocked";
+}
+
+function staleActiveControlClaim(row){
+  return activeControlClaim(row)&&row?.freshness!=="fresh";
+}
+
 function controlSummary(rows,seatNames){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
-  let busy=0,blocked=0,idle=0,unknown=0;
+  let busy=0,blocked=0,idle=0,unknown=0,stale=0;
   for(const id of Object.keys(seatNames||{})){
     const row=byId.get(id);
     if(!row){unknown++;continue;}
+    if(staleActiveControlClaim(row)){stale++;continue;}
     if(row.activity_state==="busy")busy++;
     else if(row.activity_state==="blocked")blocked++;
     else if(row.activity_state==="idle")idle++;
     else unknown++;
   }
-  return {busy,blocked,idle,unknown};
+  return {busy,blocked,idle,unknown,stale};
 }
 
 function freshnessChip(label,value){
@@ -719,7 +728,7 @@ function controlTimeLine(row){
 function renderControlOverview(rows,seatNames,snapshotMeta){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
   const summary=controlSummary(rows,seatNames);
-  const attention=summary.blocked>0||summary.unknown>0;
+  const attention=summary.blocked>0||summary.unknown>0||summary.stale>0;
 
   let html='<section class="b4-summary" aria-label="全院当前状态">'
     +'<div class="b4-summary-copy"><span class="b3-kicker">全院概览</span><h3>六席工作状态</h3>'
@@ -731,6 +740,7 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
     +'<div class="b4-metric attention"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
     +'<div class="b4-metric"><span>空闲</span><strong>'+summary.idle+'</strong></div>'
     +'<div class="b4-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
+    +'<div class="b4-metric attention"><span>状态陈旧</span><strong>'+summary.stale+'</strong></div>'
     +'</div></section>';
 
   html+='<div class="b4-grid">';
@@ -749,6 +759,11 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
 
     const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
     const task=controlTask(row);
+    const staleActive=staleActiveControlClaim(row);
+    const freshness='<div class="b4-fresh-stack">'
+      +freshnessChip("状态",row.freshness)
+      +freshnessChip("观察",row.observer_freshness)
+      +'</div>';
     const secondary=task.secondary.length
       ?'<ul class="b4-related">'+task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(humanizeControlTitle(item.title)||compactControlText(item.title,90))+'</span></li>').join("")+'</ul>'
       :"";
@@ -756,11 +771,11 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
       ?'<span class="b4-mode b4-mode-passive">被动</span>'
       :'<span class="b4-mode">只读</span>';
 
-    html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
+    html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+(staleActive?' is-stale-claim':'')+'">'
       +'<div class="b4-seat-head">'+avatarHtml(id,name)
       +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+' '+legacy+'</span></div>'
-      +'</div>'
-      +'<div class="b4-task"><span class="b3-eyebrow">'+(task.kind==="current"?"当前任务":"最近事项")+'</span>'
+      +freshness+'</div>'
+      +'<div class="b4-task"><span class="b3-eyebrow">'+(staleActive?"上次在办 · 待核验":task.kind==="current"?"当前任务":"最近事项")+'</span>'
       +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p>'
       +(task.meta?'<div class="b4-task-meta">'+esc(task.meta)+'</div>':'')+'</div>'
       +secondary
