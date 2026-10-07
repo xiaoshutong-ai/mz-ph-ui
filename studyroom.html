@@ -195,21 +195,35 @@
   <div class="sr-board-hero-copy">
     <div class="sr-board-kicker-row">
       <span class="sr-board-kicker">院务态势</span>
-      <span class="sr-board-live"><i aria-hidden="true"></i>实时</span>
+      <span class="sr-board-live"><i aria-hidden="true"></i>事件驱动</span>
     </div>
-    <h2 id="srBoardTitle">六席运行态势</h2>
-    <p>状态讲事实，观察讲可见性。先看谁在做什么，再处理真正需要关注的席位。</p>
+    <h2 id="srBoardTitle">六席工作记录</h2>
+    <p>有工作变化才更新；没有新工作就保持不动。这里看当前状态、今天做过什么，以及每席最近一条工作记录。</p>
   </div>
   <div class="sr-board-actions">
     <div class="sr-board-readout">
       <span>最近读取</span>
       <strong id="srAgentState" role="status" aria-live="polite">等待首次读取</strong>
     </div>
-    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">刷新六席</button>
+    <button id="srAgentRefresh" class="sr-btn sr-board-refresh" type="button">手动同步六席</button>
   </div>
 </section>
-<p id="srAgentMeta" class="sr-board-note">状态新鲜度来自最近语义事实；“最近可见”只表示观察链路仍可达，不等于任务刚发生变化。</p>
+<p id="srAgentMeta" class="sr-board-note">工作记录只在语义事实发生变化时写入；页面读取不会制造新的工作记录。</p>
 <div id="srAgentOverview" class="sr-board-overview"></div>
+
+<section class="sr-work-history" aria-labelledby="srWorkHistoryTitle">
+  <div class="sr-work-history-head">
+    <div>
+      <span class="sr-board-kicker">日内履历</span>
+      <h3 id="srWorkHistoryTitle">今日工作记录</h3>
+      <p>按 UTC+8 自然日汇总。每席保留今日记录，并单独显示最近一条历史工作记录。</p>
+    </div>
+    <span id="srAgentActivityMeta" class="sr-work-history-meta">等待读取</span>
+  </div>
+  <div id="srAgentActivity" class="sr-work-history-grid">
+    <div class="sr-work-history-empty">尚未读取今日工作记录。</div>
+  </div>
+</section>
 
 <section id="srAgentPersonal" class="sr-board-personal hidden" aria-labelledby="srAgentPersonalTitle">
   <div class="sr-board-personal-head">
@@ -1064,8 +1078,8 @@ const SR_AGENT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"
 const SR_AGENT_CONTROL_PATH="/functions/v1/studyroom-agent-control";
 const SR_AGENT_FOLLOWUP_MS=2000;
 const SR_AGENT_FOLLOWUP_LIMIT=6;
-const SR_AGENT_STATE_POLL_MS=10000;
-let _srAgentRows=[],_srAgentSnapshot=null,_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
+const SR_AGENT_STATE_POLL_MS=60000;
+let _srAgentRows=[],_srAgentSnapshot=null,_srAgentActivity=null,_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
 let _srAgentFollowupTimer=null,_srAgentFollowupRemaining=0,_srAgentFollowupRequestedAt=0,_srAgentFollowupAgents=[];
 
 async function agentControlApi(action){
@@ -1104,12 +1118,12 @@ function srFreshLabel(value){
 }
 function srAgentMode(row){
   if(row?.refresh_mode==="legacy_passive") return "云端被动同步";
-  return row?.adapter_type==="muse"?"Muse 持续只读观察":"按需刷新";
+  return row?.adapter_type==="muse"?"Muse 按需状态同步":"按需刷新";
 }
 function srAgentStateText(row){
   if(!row) return "暂不可用 · 尚未取得本席当前状态";
   const activity={busy:"工作中",idle:"空闲",blocked:"受阻",unavailable:"不可用",unknown:"待核验"}[row.activity_state]||"待核验";
-  return activity+" · 状态"+srFreshLabel(row.freshness)+" · 可见"+srFreshLabel(row.observer_freshness)+" · "+srAgentMode(row);
+  return activity+" · "+srAgentMode(row)+" · 无新工作时记录保持不动";
 }
 
 function normalizeSrAgentSnapshot(value){
@@ -1136,13 +1150,13 @@ function srSnapshotMeta(snapshot){
   const s=normalizeSrAgentSnapshot(snapshot);
   if(s.mode==="xia_snapshot"){
     const when=s.snapshot_at?new Date(s.snapshot_at).toLocaleString("zh-CN",{hour12:false}):"刚刚";
-    return "匣核验："+when+" · 六席统一快照；各席事实时间与可见时间独立保留";
+    return "匣核验："+when+" · 快照只做一致性核验；当前卡片始终采用各席最新工作事实";
   }
   if(s.fallback_reason==="stale_xia_snapshot"){
     const when=s.last_xia_snapshot_at?new Date(s.last_xia_snapshot_at).toLocaleString("zh-CN",{hour12:false}):"时间未知";
-    return "证据回退：匣快照已过期（上次 "+when+"），当前直接展示六席原始证据";
+    return "匣核验已过期（上次 "+when+"）；当前卡片继续直接展示六席最新工作事实";
   }
-  return "证据回退：匣统一快照生产者尚未接入，当前直接展示六席原始证据";
+  return "匣统一核验尚未接入；当前卡片直接展示六席最新工作事实";
 }
 function srSnapshotShortLabel(snapshot){
   return normalizeSrAgentSnapshot(snapshot).mode==="xia_snapshot"?"匣核验":"证据回退";
@@ -1163,8 +1177,8 @@ function renderSrAgentPersonal(id){
   document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人看板";
   document.getElementById("srAgentPersonalState").textContent=srAgentStateText(row);
   document.getElementById("srAgentPersonalMeta").textContent=row
-    ?("事实时间："+(row.last_report_at?new Date(row.last_report_at).toLocaleString("zh-CN",{hour12:false}):"未曾更新")
-      +" · 观察时间："+(row.last_observed_at?new Date(row.last_observed_at).toLocaleString("zh-CN",{hour12:false}):"未曾读取")
+    ?("最近工作："+(row.last_real_work_at?new Date(row.last_real_work_at).toLocaleString("zh-CN",{hour12:false}):"暂无工作记录")
+      +" · 最近事实："+(row.last_report_at?new Date(row.last_report_at).toLocaleString("zh-CN",{hour12:false}):"未曾更新")
       +" · revision "+row.revision)
     :"本席尚无可核验状态。";
   document.getElementById("srAgentPersonalContent").innerHTML=BoardConsumer.renderControlPersonal(
@@ -1186,10 +1200,70 @@ function applySrAgentRows(value,snapshot){
     rows,SR_AGENT_NAMES,snapshotText
   );
   document.getElementById("srAgentMeta").textContent=
-    snapshotText+"。五个 Muse 席位仍由本地 worker 只读观察；快照层不会覆盖原始事实。";
+    snapshotText+"。工作状态采用事件驱动：有变化才写，没有新工作就保持最近记录；页面读取不会制造工作事件。";
   if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
   else syncSrAgentSelection();
   return rows;
+}
+
+
+const SR_EVENT_LABEL={
+  TASK_STARTED:"开始任务",
+  TASK_UPDATED:"更新任务",
+  TASK_FINISHED:"完成任务",
+  BLOCKED:"遇到阻塞",
+  UNBLOCKED:"解除阻塞",
+  STATUS_CHANGED:"状态变化"
+};
+function srActivityTime(value){
+  const t=Date.parse(String(value||""));
+  if(!Number.isFinite(t)) return "时间未知";
+  return new Date(t).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+}
+function srActivityDateTime(value){
+  const t=Date.parse(String(value||""));
+  if(!Number.isFinite(t)) return "时间未知";
+  return new Date(t).toLocaleString("zh-CN",{hour12:false});
+}
+function srActivityText(value,max=120){
+  const t=String(value==null?"":value).replace(/\s+/g," ").trim();
+  return t.length>max?t.slice(0,max-1)+"…":t;
+}
+function renderSrAgentActivity(history){
+  _srAgentActivity=history&&typeof history==="object"&&!Array.isArray(history)?history:null;
+  const seats=Array.isArray(_srAgentActivity?.seats)?_srAgentActivity.seats:[];
+  const byId=new Map(seats.map(item=>[String(item?.agent_id||""),item]));
+  const date=String(_srAgentActivity?.local_date||"");
+  const meta=document.getElementById("srAgentActivityMeta");
+  if(meta) meta.textContent=date?(date+" · 事件变化才记一条"):"今日记录暂不可用";
+
+  let html="";
+  for(const [id,name] of Object.entries(SR_AGENT_NAMES)){
+    const seat=byId.get(id)||{};
+    const events=Array.isArray(seat.today_events)?seat.today_events.slice(0,12):[];
+    const latest=seat.latest_event&&typeof seat.latest_event==="object"?seat.latest_event:null;
+    html+='<article class="sr-work-card"><div class="sr-work-card-head"><strong>'+esc(name)+'</strong>'
+      +'<span>今日 '+events.length+' 条</span></div>';
+    if(latest){
+      html+='<div class="sr-work-latest"><span>最近工作</span><b>'+esc(srActivityText(latest.title||"状态变化",90))+'</b>'
+        +'<small>'+esc(srActivityDateTime(latest.created_at))+'</small></div>';
+    }else{
+      html+='<div class="sr-work-latest empty"><span>最近工作</span><b>暂无记录</b></div>';
+    }
+    if(events.length){
+      html+='<ol class="sr-work-events">';
+      for(const item of events){
+        const label=SR_EVENT_LABEL[String(item?.event_type||"")]||"工作变化";
+        html+='<li><time>'+esc(srActivityTime(item?.created_at))+'</time><div><span>'+esc(label)+'</span>'
+          +'<strong>'+esc(srActivityText(item?.title||"状态变化",100))+'</strong></div></li>';
+      }
+      html+='</ol>';
+    }else{
+      html+='<div class="sr-work-none">今天暂无新的工作记录</div>';
+    }
+    html+='</article>';
+  }
+  document.getElementById("srAgentActivity").innerHTML=html||'<div class="sr-work-history-empty">今日暂无工作记录。</div>';
 }
 
 function clearSrAgentFollowup(){
@@ -1245,8 +1319,12 @@ async function loadAgents(){
   if(btn) btn.disabled=true;
   if(pbtn) pbtn.disabled=true;
   try{
-    const value=await agentControlApi("state");
+    const [value,activity]=await Promise.all([
+      agentControlApi("state"),
+      agentControlApi("activity_day")
+    ]);
     const rows=applySrAgentRows(value.agents,value.snapshot);
+    renderSrAgentActivity(activity.history);
     if(maybeFinishSrAgentFollowup(rows)){
       document.getElementById("srAgentState").textContent=
         rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
@@ -1282,9 +1360,10 @@ async function refreshAgents(){
     const active=Array.isArray(value.refresh?.active_agents)?value.refresh.active_agents.length:0;
     const passive=Array.isArray(value.refresh?.passive_agents)?value.refresh.passive_agents.join("、"):"";
     document.getElementById("srAgentState").textContent=
-      "已请求 "+active+" 席实时观察"
+      "已请求 "+active+" 席按需状态同步"
       +(passive?" · "+passive+" 保持被动同步":"")
-      +" · 只读，不写入 Muse";
+      +" · 只读，不制造后台心跳";
+    agentControlApi("activity_day").then(v=>renderSrAgentActivity(v.history)).catch(()=>{});
     startSrAgentFollowup(value.refresh,rows);
   }catch(e){
     document.getElementById("srAgentState").textContent="刷新失败 · "+(e.message||e);
