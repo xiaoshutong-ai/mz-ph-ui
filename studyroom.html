@@ -1065,7 +1065,7 @@ const SR_AGENT_CONTROL_PATH="/functions/v1/studyroom-agent-control";
 const SR_AGENT_FOLLOWUP_MS=2000;
 const SR_AGENT_FOLLOWUP_LIMIT=6;
 const SR_AGENT_STATE_POLL_MS=10000;
-let _srAgentRows=[],_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
+let _srAgentRows=[],_srAgentSnapshot=null,_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
 let _srAgentFollowupTimer=null,_srAgentFollowupRemaining=0,_srAgentFollowupRequestedAt=0,_srAgentFollowupAgents=[];
 
 async function agentControlApi(action){
@@ -1112,6 +1112,42 @@ function srAgentStateText(row){
   return activity+" · 状态"+srFreshLabel(row.freshness)+" · 可见"+srFreshLabel(row.observer_freshness)+" · "+srAgentMode(row);
 }
 
+function normalizeSrAgentSnapshot(value){
+  if(!value||typeof value!=="object"||Array.isArray(value)) return {
+    mode:"evidence_fallback",producer:"evidence_fallback",fallback_reason:"missing_xia_snapshot",
+    snapshot_at:"",last_xia_snapshot_at:"",read_at:""
+  };
+  const mode=value.mode==="xia_snapshot"?"xia_snapshot":"evidence_fallback";
+  const text=(key,max=128)=>{
+    const raw=value[key];
+    return typeof raw==="string"&&raw.length<=max?raw:"";
+  };
+  return {
+    mode,
+    producer:mode==="xia_snapshot"?"xia":"evidence_fallback",
+    fallback_reason:text("fallback_reason"),
+    snapshot_at:text("snapshot_at",80),
+    last_xia_snapshot_at:text("last_xia_snapshot_at",80),
+    read_at:text("read_at",80),
+    producer_sequence:Number.isSafeInteger(Number(value.producer_sequence))?Number(value.producer_sequence):null
+  };
+}
+function srSnapshotMeta(snapshot){
+  const s=normalizeSrAgentSnapshot(snapshot);
+  if(s.mode==="xia_snapshot"){
+    const when=s.snapshot_at?new Date(s.snapshot_at).toLocaleString("zh-CN",{hour12:false}):"刚刚";
+    return "匣核验："+when+" · 六席统一快照；各席事实时间与可见时间独立保留";
+  }
+  if(s.fallback_reason==="stale_xia_snapshot"){
+    const when=s.last_xia_snapshot_at?new Date(s.last_xia_snapshot_at).toLocaleString("zh-CN",{hour12:false}):"时间未知";
+    return "证据回退：匣快照已过期（上次 "+when+"），当前直接展示六席原始证据";
+  }
+  return "证据回退：匣统一快照生产者尚未接入，当前直接展示六席原始证据";
+}
+function srSnapshotShortLabel(snapshot){
+  return normalizeSrAgentSnapshot(snapshot).mode==="xia_snapshot"?"匣核验":"证据回退";
+}
+
 function syncSrAgentSelection(){
   document.querySelectorAll("#srAgentOverview [data-agent]").forEach(button=>{
     const active=button.dataset.agent===_srAgentSelected;
@@ -1127,7 +1163,7 @@ function renderSrAgentPersonal(id){
   document.getElementById("srAgentPersonalTitle").textContent=(SR_AGENT_NAMES[id]||id)+" · 个人看板";
   document.getElementById("srAgentPersonalState").textContent=srAgentStateText(row);
   document.getElementById("srAgentPersonalMeta").textContent=row
-    ?("状态时间："+(row.last_report_at?new Date(row.last_report_at).toLocaleString("zh-CN",{hour12:false}):"未曾更新")
+    ?("事实时间："+(row.last_report_at?new Date(row.last_report_at).toLocaleString("zh-CN",{hour12:false}):"未曾更新")
       +" · 观察时间："+(row.last_observed_at?new Date(row.last_observed_at).toLocaleString("zh-CN",{hour12:false}):"未曾读取")
       +" · revision "+row.revision)
     :"本席尚无可核验状态。";
@@ -1140,15 +1176,17 @@ function renderSrAgentPersonal(id){
   try{panel.scrollIntoView({block:"start"});}catch(_e){}
 }
 
-function applySrAgentRows(value){
+function applySrAgentRows(value,snapshot){
   const rows=BoardConsumer.validateControlRows(value,SR_AGENT_NAMES);
   _srAgentRows=rows;
+  _srAgentSnapshot=normalizeSrAgentSnapshot(snapshot);
   _srAgentReadAt=Date.now();
+  const snapshotText=srSnapshotMeta(_srAgentSnapshot);
   document.getElementById("srAgentOverview").innerHTML=BoardConsumer.renderControlOverview(
-    rows,SR_AGENT_NAMES,"水墨书院 · 六席当前状态投影"
+    rows,SR_AGENT_NAMES,snapshotText
   );
   document.getElementById("srAgentMeta").textContent=
-    "数据口径：五个 Muse 席位由本地 worker 持续只读观察，前台约每 10 秒读取一次；状态新鲜度仍只来自新的语义事实，最近可见只表示观察链路可达。匣暂为被动同步。";
+    snapshotText+"。五个 Muse 席位仍由本地 worker 只读观察；快照层不会覆盖原始事实。";
   if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
   else syncSrAgentSelection();
   return rows;
@@ -1208,13 +1246,13 @@ async function loadAgents(){
   if(pbtn) pbtn.disabled=true;
   try{
     const value=await agentControlApi("state");
-    const rows=applySrAgentRows(value.agents);
+    const rows=applySrAgentRows(value.agents,value.snapshot);
     if(maybeFinishSrAgentFollowup(rows)){
       document.getElementById("srAgentState").textContent=
-        rows.length+" 席 · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
     }else{
       document.getElementById("srAgentState").textContent=
-        rows.length+" 席 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
+        rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
     }
   }catch(e){
     _srAgentRows=[];
@@ -1240,7 +1278,7 @@ async function refreshAgents(){
   if(pbtn) pbtn.disabled=true;
   try{
     const value=await agentControlApi("refresh");
-    const rows=applySrAgentRows(value.agents);
+    const rows=applySrAgentRows(value.agents,value.snapshot);
     const active=Array.isArray(value.refresh?.active_agents)?value.refresh.active_agents.length:0;
     const passive=Array.isArray(value.refresh?.passive_agents)?value.refresh.passive_agents.join("、"):"";
     document.getElementById("srAgentState").textContent=
