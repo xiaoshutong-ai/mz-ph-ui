@@ -8,12 +8,14 @@ on:
       - "workspace.html"
       - "account.html"
       - "studyroom.html"
+      - "studyroom-agent.html"
       - "devices.html"
       - "style.css"
       - "studyroom-board.css"
       - "entry.js"
       - "account.js"
       - "app.js"
+      - "studyroom-agent-client.js"
       - "phone-host-panel.js"
       - "ops-session.js"
       - "board-consumer.js"
@@ -48,7 +50,7 @@ jobs:
           set -euo pipefail
           rm -rf _site
           mkdir -p _site
-          cp -- index.html workspace.html account.html studyroom.html devices.html style.css studyroom-board.css entry.js account.js app.js ops-session.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
+          cp -- index.html workspace.html account.html studyroom.html studyroom-agent.html devices.html style.css studyroom-board.css entry.js account.js app.js studyroom-agent-client.js ops-session.js PUBLIC_ARTIFACT_PROVENANCE.json .nojekyll _site/
           if [ -f board-consumer.js ]; then
             cp -- board-consumer.js _site/
           fi
@@ -77,12 +79,14 @@ jobs:
               "workspace.html",
               "account.html",
               "studyroom.html",
+              "studyroom-agent.html",
               "devices.html",
               "style.css",
               "studyroom-board.css",
               "entry.js",
               "account.js",
               "app.js",
+              "studyroom-agent-client.js",
               "phone-host-panel.js",
               "ops-session.js",
               "board-consumer.js",
