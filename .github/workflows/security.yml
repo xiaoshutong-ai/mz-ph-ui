@@ -101,7 +101,7 @@ jobs:
                       time.sleep(1 + attempt)
               raise SystemExit(unavailable_message) from last_error
 
-          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("board-consumer.js"), Path("README.md"), Path("SECURITY.md")]
+          files = [Path("index.html"), Path("workspace.html"), Path("account.html"), Path("style.css"), Path("entry.js"), Path("account.js"), Path("app.js"), Path("ops-session.js"), Path("board-consumer.js"), Path("README.md"), Path("SECURITY.md")]
           text = "\n".join(p.read_text(encoding="utf-8") for p in files if p.exists())
           root = Path("index.html").read_text(encoding="utf-8")
           workspace = Path("workspace.html").read_text(encoding="utf-8")
@@ -109,6 +109,7 @@ jobs:
           entry_js = Path("entry.js").read_text(encoding="utf-8")
           account_js = Path("account.js").read_text(encoding="utf-8")
           app = Path("app.js").read_text(encoding="utf-8")
+          ops_session = Path("ops-session.js").read_text(encoding="utf-8")
           integration_start = app.find("function projectIntegrationMessage(project){")
           integration_end = app.find("\n}\n\nfunction runtimeField", integration_start)
           if integration_start < 0 or integration_end <= integration_start:
@@ -284,7 +285,7 @@ jobs:
               ".nojekyll",
               "README.md",
               "SECURITY.md",
-              "AGENTS.md", "studyroom.html", "studyroom-board.css", "PUBLIC_ARTIFACT_PROVENANCE.json",
+              "AGENTS.md", "studyroom.html", "studyroom-board.css", "PUBLIC_ARTIFACT_PROVENANCE.json", "ops-session.js",
               "index.html",
               "workspace.html",
               "account.html",
@@ -1072,23 +1073,47 @@ jobs:
           if 'let token=""' not in app:
               raise SystemExit("memory-only admin access token contract missing")
 
-          # Admin refresh continuity is tab-scoped only. Access JWTs stay memory-only;
-          # the rotating refresh token may live in sessionStorage for at most 8 hours.
+          # Shared Operations session manager owns refresh-token continuity.
+          # Access JWTs remain memory-only; the rotating refresh token is tab-scoped
+          # in sessionStorage for at most 8 hours.
+          if "localStorage" in ops_session:
+              raise SystemExit("shared operations session manager must not use localStorage")
           for marker in (
-              'const OPS_REFRESH_STORAGE_KEY="mz_ops_refresh_token"',
-              'const OPS_SESSION_STARTED_STORAGE_KEY="mz_ops_session_started_at"',
-              'const OPS_SESSION_MAX_AGE_MS=8*60*60*1000',
+              'const REFRESH_STORAGE_KEY="mz_ops_refresh_token"',
+              'const SESSION_STARTED_STORAGE_KEY="mz_ops_session_started_at"',
+              'const SESSION_MAX_AGE_MS=8*60*60*1000',
               'grant_type=refresh_token',
-              'persistOperationsRefreshToken',
-              'refreshAccessTokenFromStoredSession',
-              'clearOperationsSessionStorage',
-              'sessionStorage.setItem(OPS_REFRESH_STORAGE_KEY,refreshToken)',
-              'sessionStorage.removeItem(OPS_REFRESH_STORAGE_KEY)',
+              'sessionStorage.setItem(REFRESH_STORAGE_KEY,refreshToken)',
+              'sessionStorage.removeItem(REFRESH_STORAGE_KEY)',
+              'response.status===401&&retry401',
+              'function clearAccessToken()',
+              'global.addEventListener("pagehide",clearAccessToken)',
               '/auth/v1/logout',
               'keepalive:true',
           ):
+              if marker not in ops_session:
+                  raise SystemExit("shared operations session contract missing: " + marker)
+          for marker in (
+              'const OPS_SESSION=window.MzOpsSession',
+              'OPS_SESSION.acceptAuthSession',
+              'OPS_SESSION.refreshAccessToken',
+              'OPS_SESSION.fetch',
+              'OPS_SESSION.logout',
+              'OPS_SESSION.clearAccessToken',
+          ):
               if marker not in app:
-                  raise SystemExit("tab-scoped admin refresh contract missing: " + marker)
+                  raise SystemExit("workspace shared-session delegation missing: " + marker)
+          for forbidden_duplicate_auth in (
+              'grant_type=refresh_token',
+              'sessionStorage.setItem(OPS_REFRESH_STORAGE_KEY',
+              '/auth/v1/logout',
+          ):
+              if forbidden_duplicate_auth in app:
+                  raise SystemExit("workspace duplicated shared session logic: " + forbidden_duplicate_auth)
+          if '<script src="./ops-session.js" defer></script>' not in workspace:
+              raise SystemExit("workspace must load shared operations session manager")
+          if workspace.index('<script src="./ops-session.js" defer></script>') > workspace.index('<script src="./app.js" defer></script>'):
+              raise SystemExit("shared operations session manager must load before app.js")
 
           for forbidden_admin_persistence in (
               'sessionStorage.setItem("access_token"',
@@ -1097,7 +1122,7 @@ jobs:
               'sessionStorage.setItem("mz_ops_access',
               'sessionStorage.setItem(OPS_REFRESH_STORAGE_KEY,token)',
           ):
-              if forbidden_admin_persistence in app:
+              if forbidden_admin_persistence in app or forbidden_admin_persistence in ops_session:
                   raise SystemExit("admin access token persistence boundary violated: " + forbidden_admin_persistence)
 
           pagehide_start = app.index('window.addEventListener("pagehide"')
@@ -1111,9 +1136,9 @@ jobs:
           logout_start = app.index("function logout(){")
           logout_end = app.index('document.querySelectorAll("[data-preset]")', logout_start)
           logout_block = app[logout_start:logout_end]
-          for marker in ("clearOperationsSessionStorage()", '/auth/v1/logout'):
+          for marker in ("OPS_SESSION.logout()", "operationsSessionGeneration++", "clearSensitiveBrowserState()"):
               if marker not in logout_block:
-                  raise SystemExit("admin logout must revoke and clear tab session: " + marker)
+                  raise SystemExit("admin logout must delegate revoke and clear browser state: " + marker)
 
           for marker in (
               "window.opener !== null",
@@ -1146,6 +1171,7 @@ jobs:
           node --check entry.js
           node --check account.js
           node --check app.js
+          node --check ops-session.js
           node --check board-consumer.js
           python3 - <<'PY'
           from pathlib import Path
