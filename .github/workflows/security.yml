@@ -136,6 +136,46 @@ jobs:
               if required_projection_marker not in integration_block:
                   raise SystemExit("generic project status projection contract missing: " + required_projection_marker)
           studyroom = Path("studyroom.html").read_text(encoding="utf-8")
+          seat_page_path = Path("studyroom-agent.html")
+          seat_client_path = Path("studyroom-agent-client.js")
+          if seat_page_path.exists() != seat_client_path.exists():
+              raise SystemExit("independent seat page and shared client must ship atomically")
+          independent_seats = seat_page_path.exists()
+          seat_page = seat_page_path.read_text(encoding="utf-8") if independent_seats else ""
+          seat_client = seat_client_path.read_text(encoding="utf-8") if independent_seats else ""
+          text += "\n" + studyroom + "\n" + seat_page + "\n" + seat_client
+          if independent_seats:
+              for marker in ('./ops-session.js', 'MzOpsSession', 'StudyroomAgentClient.create',
+                             'BoardConsumer.renderControlPersonal', 'URLSearchParams', '返回六席态势'):
+                  if marker not in seat_page:
+                      raise SystemExit("independent seat page contract missing: " + marker)
+              for marker in ('localStorage', 'sessionStorage', 'grant_type=refresh_token', '/auth/v1/logout'):
+                  if marker in seat_page or marker in seat_client:
+                      raise SystemExit("independent seat page duplicated platform authentication: " + marker)
+              for marker in ('id="srAgentPersonal"', 'renderSrAgentPersonal', 'renderControlPersonal', 'srAgentSelected'):
+                  if marker in studyroom:
+                      raise SystemExit("overview must not embed or expand personal details: " + marker)
+              for marker in ('STATE_POLL_MS=300000', 'FOLLOWUP_LIMIT=6', "request('state')", "request('refresh')"):
+                  if marker not in seat_client:
+                      raise SystemExit("shared bounded seat client contract missing: " + marker)
+              for marker in ('45000', '60000', 'REPORT_STATUS', 'watchdog'):
+                  if marker in seat_client:
+                      raise SystemExit("automatic Muse refresh is forbidden: " + marker)
+              pages_contract = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
+              for marker in (
+                  '      - "studyroom-agent.html"',
+                  '      - "studyroom-agent-client.js"',
+                  '              "studyroom-agent.html",',
+                  '              "studyroom-agent-client.js",',
+              ):
+                  if marker not in pages_contract:
+                      raise SystemExit("Pages standalone-seat allowlist missing: " + marker.strip())
+              pages_build = pages_contract.split("Build strict Pages allowlist", 1)[-1]
+              first_cp = next((line.strip() for line in pages_build.splitlines() if line.strip().startswith("cp -- index.html")), "")
+              for artifact in ("studyroom-agent.html", "studyroom-agent-client.js"):
+                  if artifact not in first_cp:
+                      raise SystemExit("Pages build does not stage standalone-seat artifact: " + artifact)
+
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
           style = Path("style.css").read_text(encoding="utf-8")
           studyroom_board_style_path = Path("studyroom-board.css")
@@ -232,8 +272,13 @@ jobs:
               "状态摘要",
               "状态来源",
           )
-          board_source = board_surface + "\n" + board_consumer
+          board_source = board_surface + "\n" + board_consumer + "\n" + seat_page
           board_required_copy = board_required_copy_v4 if board_version == "v4" else board_required_copy_v3
+          if independent_seats:
+              if board_version != "v4":
+                  raise SystemExit("independent seats require the approved token-driven card surface")
+              board_required_copy = ("全院概览", "当前事项", "今日已完成事项", "最新上报", "个人看板",
+                                     "席位详情", "最近项目事实", "返回六席态势")
           for marker in board_required_copy:
               if marker not in board_source:
                   raise SystemExit("Chinese-first board copy missing: " + marker)
@@ -290,6 +335,7 @@ jobs:
               "README.md",
               "SECURITY.md",
               "AGENTS.md", "studyroom.html", "studyroom-board.css", "PUBLIC_ARTIFACT_PROVENANCE.json", "ops-session.js",
+              "studyroom-agent.html", "studyroom-agent-client.js",
               "index.html",
               "workspace.html",
               "account.html",
@@ -358,6 +404,11 @@ jobs:
                   "index.html", "account.html", "account.js"
               },
           }
+          if independent_seats:
+              if schema_version != 3:
+                  raise SystemExit("independent seat mirrors require v3 canonical provenance")
+              target_expected_provenance_v3[("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web")].update(
+                  {"studyroom-agent.html", "studyroom-agent-client.js"})
           phone_host_key = ("xiaoshutong-ai/xiaoshutong-product", "ops/public-web")
           phone_host_present = any(rel == "phone-host-panel.js" for rel, _path in tracked)
           if phone_host_present:
@@ -1245,6 +1296,18 @@ jobs:
             node --check ops-session.js
           fi
           node --check board-consumer.js
+          if [ -f studyroom-agent-client.js ]; then
+            node --check studyroom-agent-client.js
+            python3 - <<'PY_SEAT'
+          from pathlib import Path
+          import re
+          scripts=re.findall(r"(?s)<script>(.*?)</script>",Path("studyroom-agent.html").read_text(encoding="utf-8"))
+          if len(scripts)!=1:
+              raise SystemExit("independent seat must contain one shared template initializer")
+          Path("/tmp/studyroom-agent-inline.js").write_text(scripts[0],encoding="utf-8")
+          PY_SEAT
+            node --check /tmp/studyroom-agent-inline.js
+          fi
           if [ -f ops-session.js ]; then
             node <<'NODE'
           const assert=require("node:assert/strict");
@@ -1383,6 +1446,28 @@ jobs:
           assert.throws(()=>B.validateControlRows([...rows,row("bi")],N));
           assert.throws(()=>B.validateControlRows([{...row("bi"),current_progress:101}],N));
 
+          const independentSeats=fs.existsSync("studyroom-agent.html");
+          if(independentSeats){
+            const time=new Date(2026,9,7,12,3).toISOString(),clock=new Date(2026,9,7,23,30).getTime();
+            const history={seats:[{agent_id:"bi",today_events:Array.from({length:41},(_,i)=>({id:String(i),
+              event_type:"STATUS_CHANGED",created_at:time,title:"done-"+i,detail:"full detail "+i,source:"xstpilot"})),recent_events:[]}]};
+            const todayRows=B.validateControlRows(rows.map(r=>({...r,last_report_at:time})),N);
+            const overview=B.renderControlOverview(todayRows,N,"fixture",history,clock);
+            assert.equal((overview.match(/data-work-event=/g)||[]).length,41);
+            assert.match(overview,/最新上报：10\/07 12:03/);
+            assert.doesNotMatch(overview,/SYNTHETIC_/);
+            for(const id of Object.keys(N))assert.ok(overview.includes('href="studyroom-agent.html?seat='+id+'"'));
+            const stale=B.validateControlRows([row("bi",{activity_state:"busy",freshness:"stale",current_task_title:"STALE_ACTIVE"})],N);
+            const staleHtml=B.renderControlOverview(stale,{bi:"笔"},"fixture",history,clock);
+            assert.match(staleHtml,/状态陈旧 · 待核验/);assert.doesNotMatch(staleHtml,/STALE_ACTIVE/);
+            assert.match(staleHtml,/<strong>0<\/strong><small>当前在办<\/small>/);
+            const personal=B.renderControlPersonal("bi","笔",todayRows[0],clock,history,clock);
+            assert.equal((personal.match(/data-work-event=/g)||[]).length,41);
+            assert.match(personal,/full detail 40/);assert.match(personal,/xstpilot/);
+            assert.match(personal,/最近项目事实/);assert.doesNotMatch(personal,/SYNTHETIC_/);
+            const active=B.validateControlRows([row("bi",{activity_state:"busy",current_task_title:"<img onerror=x>"})],N)[0];
+            assert.match(B.renderControlPersonal("bi","笔",active,clock,history,clock),/&lt;img onerror=x&gt;/);
+          }else{
           const overview=B.renderControlOverview(
             B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,activity_state:"busy"}:r),N),N,"fixture"
           );
@@ -1443,6 +1528,7 @@ jobs:
           assert.doesNotMatch(escaped,/<h4><img/);
           assert.doesNotMatch(escaped,/<p><script>/);
 
+          }
           assert.match(app,/AGENT_CONTROL_V2_PATH="\/functions\/v1\/studyroom-agent-control"/);
           assert.match(app,/runAgentStatusRequest\("state"\)/);
           assert.match(app,/runAgentStatusRequest\("refresh"\)/);
@@ -1452,6 +1538,20 @@ jobs:
           assert.match(appFollow,/loadAgentStatusOps\(\)/);
           assert.doesNotMatch(appFollow,/refreshAgentStatusOps\(\)/);
 
+          if(independentSeats){
+            const client=fs.readFileSync("studyroom-agent-client.js","utf8");
+            const page=fs.readFileSync("studyroom-agent.html","utf8");
+            assert.match(room,/BoardConsumer\.validateControlRows/);assert.match(room,/BoardConsumer\.renderControlOverview/);
+            assert.match(room,/applySrAgentRows\(value\.agents,value\.snapshot,value\.history\)/);
+            assert.match(client,/STATE_POLL_MS=300000/);assert.match(client,/FOLLOWUP_LIMIT=6/);
+            assert.match(client,/function read\(\)\{return request\('state'\)/);
+            assert.match(client,/function refresh\(\)\{return request\('refresh'\)/);
+            assert.match(page,/MzOpsSession/);assert.match(page,/返回六席态势/);
+            assert.doesNotMatch(room,/srAgentPersonal|renderControlPersonal|srAgentSelected/);
+            assert.doesNotMatch(client,/watchdog|REPORT_STATUS|45000|60000/);
+            const polling=client.slice(client.indexOf("function start()"),client.indexOf("function stop()"));
+            assert.match(polling,/return read\(\)/);assert.doesNotMatch(polling,/refresh\(\)/);
+          }else{
           assert.match(room,/SR_AGENT_CONTROL_PATH="\/functions\/v1\/studyroom-agent-control"/);
           assert.match(room,/BoardConsumer\.validateControlRows/);
           assert.match(room,/BoardConsumer\.renderControlOverview/);
@@ -1477,6 +1577,8 @@ jobs:
           const follow=room.slice(room.indexOf("function startSrAgentFollowup"),room.indexOf("async function loadAgents"));
           assert.match(follow,/loadAgents\(\)/);
           assert.doesNotMatch(follow,/refreshAgents\(\)/);
+
+          }
 
           assert.match(pub,/\/rest\/v1\/agent_status_public\?select=\*&order=id/);
           assert.doesNotMatch(pub,/studyroom-agent-control/);
