@@ -36,6 +36,11 @@ let stewardDashboardDays=30;
 let stewardDashboardSnapshot=null;
 let stewardFindingSeverity="ACTIONABLE";
 const $=id=>document.getElementById(id);
+const PHONE_HOST=window.XstPhoneHostPanel;
+const phoneHostPanel=PHONE_HOST?PHONE_HOST.createPanel({
+  document,root:$("phoneHostPanel"),result:PHONE_HOST.consumeReceipt(window.location,window.history),
+  schedule:(callback,delay)=>window.setTimeout(callback,delay),cancel:id=>window.clearTimeout(id)
+}):null;
 const CUSTOM_MODEL="__custom__";
 
 const PROVIDERS={
@@ -2879,6 +2884,7 @@ async function loadStewardDashboard(days=stewardDashboardDays){
 }
 
 function renderProjectSelection(){
+  if(phoneHostPanel)phoneHostPanel.show({projectKey:selectedProjectKey,authorized:!!token&&opsAuthStatus?.aal==="aal2"&&!!membershipFor()});
   const project=membershipFor();
   if(!project)return;
 
@@ -2923,7 +2929,8 @@ function applyOpsStatus(status){
     select.appendChild(option);
   }
 
-  const saved=sessionStorage.getItem("mz_ops_project")||selectedProjectKey;
+  const requested=new URLSearchParams(window.location.search).get("project");
+  const saved=(requested&&opsMemberships.some(p=>p?.project_key===requested)?requested:null)||sessionStorage.getItem("mz_ops_project")||selectedProjectKey;
   selectedProjectKey=opsMemberships.some(p=>p?.project_key===saved)
     ?saved
     :opsMemberships.some(p=>p?.project_key==="mengzheng")
@@ -4019,6 +4026,7 @@ async function testProvider(mode){
 }
 
 function clearSensitiveBrowserState(){
+  if(phoneHostPanel)phoneHostPanel.clear();
   clearAgentStatusOps();
   token="";
   OPS_SESSION.clearAccessToken();
