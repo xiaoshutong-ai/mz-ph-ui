@@ -4,10 +4,12 @@
   "artifacts": [
     {
       "public_paths": [
-        "studyroom.html",
         "board-consumer.js",
         "devices.html",
+        "studyroom.html",
         "studyroom-board.css",
+        "studyroom-agent.html",
+        "studyroom-agent-client.js",
         "assets/characters/bi.png",
         "assets/characters/mo.png",
         "assets/characters/zhi.png",
@@ -17,12 +19,14 @@
       ],
       "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
       "canonical_root": "ops/public-web",
-      "canonical_commit": "836f04af1deddf08b8d150a363f31ada705d3d3b",
+      "canonical_commit": "35cea8b6c37cb1ba032d6142f9b5105e980555ca",
       "canonical_paths": [
-        "ops/public-web/studyroom.html",
         "ops/public-web/board-consumer.js",
-        "ops/public-web/studyroom-board.css",
         "ops/public-web/devices.html",
+        "ops/public-web/studyroom.html",
+        "ops/public-web/studyroom-board.css",
+        "ops/public-web/studyroom-agent.html",
+        "ops/public-web/studyroom-agent-client.js",
         "ops/public-web/assets/characters/bi.png",
         "ops/public-web/assets/characters/mo.png",
         "ops/public-web/assets/characters/zhi.png",

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>个人看板 · 水墨书院</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="studyroom-board.css">
+</head>
+<body class="steward-focus-mode">
+<main id="srAgentPage" class="sr-overview-agents">
+  <nav class="b5-page-nav" aria-label="看板导航">
+    <a href="studyroom.html#srAgents">← 返回六席态势</a>
+    <a href="workspace.html">运维平台</a>
+  </nav>
+  <header class="b5-page-header">
+    <div><span class="sr-board-kicker">水墨书院 · 六席工作档案</span><h1 id="srSeatPageTitle">个人看板</h1></div>
+    <button id="srSeatRefresh" class="sr-board-refresh" type="button" title="手动请求一次六席同步；自动读取不会触发同步" disabled>重新读取</button>
+  </header>
+  <div id="srSeatLoginGate" class="b5-page-message" hidden>请先在运维平台完成登录和二次验证。<a href="workspace.html">前往登录</a></div>
+  <p id="srSeatReadout" class="sr-board-note" role="status" aria-live="polite">正在读取个人看板</p>
+  <div id="srSeatContent" hidden></div>
+  <noscript>请启用 JavaScript 后读取个人看板。</noscript>
+</main>
+<script src="./ops-session.js"></script>
+<script src="./board-consumer.js"></script>
+<script src="./studyroom-agent-client.js"></script>
+<script>
+(function(){
+  'use strict';
+  const OpsSession=window.MzOpsSession;
+  const seat=new URLSearchParams(location.search).get('seat')||'bi';
+  const names=StudyroomAgentClient.SEATS;
+  const content=document.getElementById('srSeatContent');
+  const readout=document.getElementById('srSeatReadout');
+  const button=document.getElementById('srSeatRefresh');
+  if(!Object.hasOwn(names,seat)){
+    readout.textContent='席位不存在，请返回六席态势选择人物。';return;
+  }
+  document.getElementById('srSeatPageTitle').textContent=names[seat]+' · 个人看板';
+  document.title=names[seat]+' · 个人看板 · 水墨书院';
+  if(!OpsSession){readout.textContent='平台会话组件暂不可用，请从运维平台重新进入。';return;}
+  const client=StudyroomAgentClient.create({
+    session:OpsSession,
+    onData(value,readAt){
+      const rows=BoardConsumer.validateControlRows(value.agents,names);
+      const row=rows.find(item=>item.id===seat)||null;
+      content.innerHTML=BoardConsumer.renderControlPersonal(seat,names[seat],row,readAt,value.history,readAt);
+      content.hidden=false;
+    },
+    onBusy(busy){button.disabled=busy;},
+    onStatus(text){readout.textContent=text;},
+    onError(error){
+      content.innerHTML='';content.hidden=true;
+      readout.textContent='读取失败：'+error.message;
+    }
+  });
+  button.addEventListener('click',()=>client.refresh());
+  window.addEventListener('pagehide',event=>{if(!event.persisted)client.stop();});
+  window.addEventListener('pageshow',event=>{if(event.persisted)client.read();});
+  OpsSession.getAccessToken().then(token=>{
+    if(!token)throw new Error('AUTH_REQUIRED');
+    return client.start();
+  }).catch(()=>{
+    document.getElementById('srSeatLoginGate').hidden=false;
+    readout.textContent='尚未取得平台会话';
+  });
+})();
+</script>
+</body>
+</html>

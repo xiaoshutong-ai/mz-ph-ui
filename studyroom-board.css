@@ -1092,3 +1092,61 @@
   .b4-seat-card{transition:none!important}
   .b4-seat-card:hover{transform:none!important}
 }
+
+/* Complete semantic timelines and one independent personal-page surface.
+   #srAgentPage inherits the same tokens through .sr-overview-agents. */
+#srAgentPage{max-width:1160px;margin:0 auto;padding:28px 32px 60px;color:var(--sr-text)}
+.b5-page-nav{display:flex;justify-content:space-between;gap:16px;margin-bottom:28px;font-size:13px}
+.b5-page-nav a,.b5-page-message a{color:var(--sr-jade-deep);text-decoration:none}
+.b5-page-nav a:hover,.b5-page-message a:hover{text-decoration:underline}
+.b5-page-nav a:focus-visible,.b5-page-header button:focus-visible{outline:2px solid var(--sr-focus);outline-offset:4px}
+.b5-page-header{display:flex;align-items:center;justify-content:space-between;gap:20px;margin-bottom:14px}
+.b5-page-header h1{font-family:"Noto Serif SC","Songti SC",serif;font-size:29px;color:var(--sr-title);margin:8px 0}
+.b5-page-message{padding:20px;border:1px solid var(--sr-border);border-radius:14px;background:var(--sr-surface);margin-bottom:16px}
+.b4-task h4[data-current-task]{display:block;min-height:1.5em;-webkit-line-clamp:unset;overflow:visible}
+.b5-card-history{margin:0 0 18px}
+.b5-card-history h5{display:flex;gap:7px;align-items:center;margin:0 0 10px;color:var(--sr-text-soft);font-size:11px;font-weight:800}
+.b5-card-history h5 span{padding:2px 6px;border-radius:6px;background:var(--sr-surface-muted);color:var(--sr-text-mid);font-size:10px}
+.b5-events{list-style:none;margin:0;padding:0;display:grid;gap:11px}
+.b5-event{display:grid;grid-template-columns:40px minmax(0,1fr);gap:9px;align-items:start}
+.b5-event time{font-size:10px;font-variant-numeric:tabular-nums;color:var(--sr-text-soft);line-height:1.8}
+.b5-event-body{min-width:0}
+.b5-event-heading{display:flex;flex-wrap:wrap;align-items:baseline;gap:3px 7px;line-height:1.65}
+.b5-event-type{font-size:10px;color:var(--sr-jade-deep);font-weight:750;flex:none}
+.b5-event-heading strong{font-size:11px;color:var(--sr-text-strong);font-weight:650;overflow-wrap:anywhere}
+.b5-events-empty{margin:6px 0;color:var(--sr-text-soft);font-size:11px;line-height:1.7}
+.b4-seat-foot .b4-times{font-size:10px;color:var(--sr-text-soft)}
+.b4-open-seat{display:inline-flex;align-items:center;gap:3px;min-height:34px;font-size:11px;text-decoration:none}
+.b5-personal-hero{grid-template-columns:minmax(0,1fr) auto;padding:24px;gap:16px}
+.b5-personal-fresh{display:grid;gap:6px;justify-items:end}
+.b5-personal-current{grid-column:1/-1;margin:0;padding:14px 0 0}
+.b5-personal-current h4{font-size:21px;line-height:1.6}
+.b5-personal-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-column:1/-1;gap:14px;margin:0}
+.b5-personal-facts div{border:1px solid var(--sr-border-soft);background:var(--sr-white);border-radius:12px;padding:13px 15px}
+.b5-personal-facts dt{font-size:10px;color:var(--sr-text-soft);margin-bottom:6px}
+.b5-personal-facts dd{font-size:14px;color:var(--sr-text-strong);font-variant-numeric:tabular-nums;margin:0}
+.b5-personal-hero .b3-personal-source{font-size:10px;line-height:1.8}
+.b5-personal-section{margin-top:20px;padding:23px 25px;border:1px solid var(--sr-border);border-radius:17px;background:var(--sr-surface);box-shadow:var(--sr-shadow-card)}
+.b5-section-head{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.b5-section-head h3{font-family:"Noto Serif SC","Songti SC",serif;color:var(--sr-title);font-size:20px;margin:0}
+.b5-section-head>span{font-size:11px;color:var(--sr-text-soft);font-variant-numeric:tabular-nums}
+.b5-section-note{font-size:11px;color:var(--sr-text-soft);line-height:1.7;margin:8px 0 22px}
+.b5-events-detail{gap:0}
+.b5-events-detail .b5-event{grid-template-columns:130px minmax(0,1fr);gap:20px;padding:19px 0;border-top:1px solid var(--sr-border-soft)}
+.b5-events-detail .b5-event:first-child{padding-top:0;border-top:0}
+.b5-events-detail .b5-event time{font-size:12px;line-height:1.8;white-space:normal}
+.b5-events-detail .b5-event-heading strong{font-size:15px;line-height:1.7}
+.b5-events-detail .b5-event-type{font-size:11px}
+.b5-event-detail{font-size:13px;line-height:1.85;color:var(--sr-text-mid);margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.b5-event-context{display:flex;flex-wrap:wrap;gap:5px 20px;margin-top:10px;font-size:11px;color:var(--sr-text-soft);overflow-wrap:anywhere}
+@media(max-width:720px){
+  #srAgentPage{padding:20px 16px 40px}
+  .b5-page-header h1{font-size:24px}
+  .b5-personal-hero{padding:18px}
+  .b5-personal-facts{grid-template-columns:1fr;gap:9px}
+  .b5-personal-section{padding:18px}
+  .b5-events-detail .b5-event{grid-template-columns:1fr;gap:5px}
+  .b5-events-detail .b5-event time{font-size:11px}
+  .b5-event-heading strong{font-size:12px}
+  .b4-open-seat{min-height:42px}
+}
