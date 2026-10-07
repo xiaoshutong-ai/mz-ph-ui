@@ -1064,6 +1064,7 @@ const SR_AGENT_NAMES={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"
 const SR_AGENT_CONTROL_PATH="/functions/v1/studyroom-agent-control";
 const SR_AGENT_FOLLOWUP_MS=2000;
 const SR_AGENT_FOLLOWUP_LIMIT=6;
+const SR_AGENT_STATE_POLL_MS=10000;
 let _srAgentRows=[],_srAgentReadAt=0,_srAgentSelected="",_srAgentsLoading=false,_srAgentTimer=null;
 let _srAgentFollowupTimer=null,_srAgentFollowupRemaining=0,_srAgentFollowupRequestedAt=0,_srAgentFollowupAgents=[];
 
@@ -1103,7 +1104,7 @@ function srFreshLabel(value){
 }
 function srAgentMode(row){
   if(row?.refresh_mode==="legacy_passive") return "云端被动同步";
-  return row?.adapter_type==="muse"?"Muse 只读观察":"按需刷新";
+  return row?.adapter_type==="muse"?"Muse 持续只读观察":"按需刷新";
 }
 function srAgentStateText(row){
   if(!row) return "暂不可用 · 尚未取得本席当前状态";
@@ -1147,7 +1148,7 @@ function applySrAgentRows(value){
     rows,SR_AGENT_NAMES,"水墨书院 · 六席当前状态投影"
   );
   document.getElementById("srAgentMeta").textContent=
-    "数据口径：状态新鲜度来自最近语义事实；最近可见仅表示观察链路可达。当前投影不替代 Goal、PR、Review、CI 与设备验收证据。";
+    "数据口径：五个 Muse 席位由本地 worker 持续只读观察，前台约每 10 秒读取一次；状态新鲜度仍只来自新的语义事实，最近可见只表示观察链路可达。匣暂为被动同步。";
   if(_srAgentSelected) renderSrAgentPersonal(_srAgentSelected);
   else syncSrAgentSelection();
   return rows;
@@ -1278,8 +1279,12 @@ function ensureSrAgentTimer(){
   _srAgentTimer=setInterval(()=>{
     const section=document.getElementById("srAgents");
     if(!document.hidden&&section&&section.classList.contains("active")) loadAgents();
-  },3600000);
+  },SR_AGENT_STATE_POLL_MS);
 }
+document.addEventListener("visibilitychange",()=>{
+  const section=document.getElementById("srAgents");
+  if(!document.hidden&&section&&section.classList.contains("active")) loadAgents();
+});
 
 function refreshAll(){
   loadOverview();
