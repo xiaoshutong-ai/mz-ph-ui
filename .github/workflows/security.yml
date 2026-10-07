@@ -1356,7 +1356,19 @@ jobs:
           assert.match(overview,/工作中/);
           assert.match(overview,/空闲/);
           assert.match(overview,/最近工作/);
-          assert.doesNotMatch(overview,/状态新鲜|状态陈旧/);
+          assert.match(overview,/aria-label="状态新鲜"/);
+          assert.match(overview,/aria-label="观察新鲜"/);
+          assert.match(overview,/<span>状态陈旧<\/span><strong>0<\/strong>/);
+
+          const staleBusy=B.validateControlRows([row("mo",{
+            activity_state:"busy",freshness:"stale",observer_freshness:"fresh",
+            current_task_title:"OLD_ACTIVE_CLAIM"
+          })],N)[0];
+          const staleHtml=B.renderControlOverview([staleBusy],{mo:"墨"},"fixture");
+          assert.match(staleHtml,/is-stale-claim/);
+          assert.match(staleHtml,/上次在办 · 待核验/);
+          assert.match(staleHtml,/<strong>0<\/strong><small>当前在办<\/small>/);
+          assert.match(staleHtml,/<span>状态陈旧<\/span><strong>1<\/strong>/);
 
           const style=fs.readFileSync("style.css","utf8");
           const boardV4=style.includes("水墨书院实时看板 v4 · Calm Control Surface");
@@ -1419,9 +1431,16 @@ jobs:
           assert.doesNotMatch(room,/agentControlApi\("activity_day"\)/);
           assert.doesNotMatch(room,/SR_AGENT_STATE_POLL_MS=(?:10000|60000)/);
           assert.doesNotMatch(room,/\/rest\/v1\/agent_status\?select=/);
-          const all=room.slice(room.indexOf("function refreshAll(){"),room.indexOf("(function(){",room.indexOf("function refreshAll(){")));
-          assert.match(all,/loadAgents\(\)/);
-          assert.doesNotMatch(all,/refreshAgents\(\)/);
+          assert.match(room,/onclick="refreshAll\(true\);loadProjectEvidence\(true\)">刷新/);
+          const refreshAllStart=room.indexOf("function refreshAll(syncAgents=false)");
+          const startupStart=room.indexOf("(function(){",refreshAllStart);
+          assert.ok(refreshAllStart>=0&&startupStart>refreshAllStart);
+          const all=room.slice(refreshAllStart,startupStart);
+          assert.match(all,/if\(syncAgents\) refreshAgents\(\)/);
+          assert.match(all,/else loadAgents\(\)/);
+          const startup=room.slice(startupStart);
+          assert.match(startup,/refreshAll\(\)/);
+          assert.doesNotMatch(startup,/refreshAll\(true\)/);
           const follow=room.slice(room.indexOf("function startSrAgentFollowup"),room.indexOf("async function loadAgents"));
           assert.match(follow,/loadAgents\(\)/);
           assert.doesNotMatch(follow,/refreshAgents\(\)/);
