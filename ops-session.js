@@ -19,6 +19,10 @@ function authRequiredError(message="身份验证失败或会话已失效"){
 function clearAccessToken(){
   accessToken="";
 }
+function setAccessToken(value){
+  accessToken=String(value||"").trim();
+  return accessToken;
+}
 function clearStorage(){
   sessionStorage.removeItem(REFRESH_STORAGE_KEY);
   sessionStorage.removeItem(SESSION_STARTED_STORAGE_KEY);
@@ -91,9 +95,9 @@ function currentAccessToken(){
   return accessToken;
 }
 async function getAccessToken({forceRefresh=false}={}){
+  if(!forceRefresh&&accessToken)return accessToken;
   if(!readRefreshToken())throw authRequiredError();
-  if(forceRefresh||!accessToken)return refreshAccessToken();
-  return accessToken;
+  return refreshAccessToken();
 }
 async function authFetch(url,init={},options={}){
   const retry401=options.retry401!==false;
@@ -137,6 +141,7 @@ global.MzOpsSession=Object.freeze({
   SESSION_MAX_AGE_MS,
   authRequiredError,
   clearAccessToken,
+  setAccessToken,
   clearStorage,
   readRefreshToken,
   persistRefreshToken,
