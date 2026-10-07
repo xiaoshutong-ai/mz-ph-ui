@@ -485,7 +485,7 @@ function validateControlRows(value,seatNames){
     for(const [key,max] of [
       ["display_name",32],["current_task_title",200],["current_task_detail",4000],
       ["last_task_title",200],["last_task_detail",4000],["last_blocker",1000],
-      ["last_report_at",80],["last_observed_at",80],["report_source",32]
+      ["last_report_at",80],["last_observed_at",80],["last_real_work_at",80],["report_source",32]
     ]){
       if(row[key]!=null&&(typeof row[key]!=="string"||row[key].length>max))bad(at+" "+key+" 非法");
       result[key]=row[key]||"";
@@ -692,17 +692,16 @@ function controlTask(row){
 
 function controlSummary(rows,seatNames){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
-  let stateFresh=0,observerFresh=0,busy=0,blocked=0,unknown=0;
+  let busy=0,blocked=0,idle=0,unknown=0;
   for(const id of Object.keys(seatNames||{})){
     const row=byId.get(id);
     if(!row){unknown++;continue;}
-    if(row.freshness==="fresh")stateFresh++;
-    if(row.observer_freshness==="fresh")observerFresh++;
     if(row.activity_state==="busy")busy++;
     else if(row.activity_state==="blocked")blocked++;
-    else if(row.activity_state==="unknown"||row.activity_state==="unavailable")unknown++;
+    else if(row.activity_state==="idle")idle++;
+    else unknown++;
   }
-  return {stateFresh,observerFresh,busy,blocked,unknown};
+  return {busy,blocked,idle,unknown};
 }
 
 function freshnessChip(label,value){
@@ -711,30 +710,26 @@ function freshnessChip(label,value){
 }
 
 function controlTimeLine(row){
-  const report=relativeControlTime(row?.last_report_at);
-  const observed=relativeControlTime(row?.last_observed_at);
-  const reportExact=row?.last_report_at?formatDateTime(row.last_report_at):"未曾更新";
-  const observedExact=row?.last_observed_at?formatDateTime(row.last_observed_at):"未曾读取";
-  return '<span title="事实时间：'+esc(reportExact)+'">事实 '+esc(report)+'</span>'
-    +'<span title="最近可见：'+esc(observedExact)+'">可见 '+esc(observed)+'</span>';
+  const workAt=row?.last_real_work_at||row?.last_report_at;
+  const work=relativeControlTime(workAt);
+  const workExact=workAt?formatDateTime(workAt):"暂无工作记录";
+  return '<span title="最近工作：'+esc(workExact)+'">最近工作 '+esc(work)+'</span>';
 }
 
 function renderControlOverview(rows,seatNames,snapshotMeta){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
   const summary=controlSummary(rows,seatNames);
-  const seats=Object.keys(seatNames||{}).length;
-  const attention=summary.blocked>0||summary.unknown>0||summary.stateFresh<seats;
+  const attention=summary.blocked>0||summary.unknown>0;
 
   let html='<section class="b4-summary" aria-label="全院当前状态">'
-    +'<div class="b4-summary-copy"><span class="b3-kicker">全院概览</span><h3>六席运行态势</h3>'
-    +'<p>状态是任务事实，最近可见只代表观察链路仍可达。</p></div>'
+    +'<div class="b4-summary-copy"><span class="b3-kicker">全院概览</span><h3>六席工作状态</h3>'
+    +'<p>有工作变化才更新；没有新工作就保留最近记录，不用心跳制造“新鲜”。</p></div>'
     +'<div class="b4-summary-health '+(attention?"watch":"good")+'"><span>'+(attention?"需要关注":"运行平稳")+'</span><strong>'
-    +summary.stateFresh+'/'+seats+'</strong><small>状态新鲜</small></div>'
+    +(summary.busy+summary.blocked)+'</strong><small>当前在办</small></div>'
     +'<div class="b4-metrics">'
-    +'<div class="b4-metric"><span>状态新鲜</span><strong>'+summary.stateFresh+'<small>/'+seats+'</small></strong></div>'
-    +'<div class="b4-metric"><span>最近可见</span><strong>'+summary.observerFresh+'<small>/'+seats+'</small></strong></div>'
     +'<div class="b4-metric"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
     +'<div class="b4-metric attention"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
+    +'<div class="b4-metric"><span>空闲</span><strong>'+summary.idle+'</strong></div>'
     +'<div class="b4-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
     +'</div></section>';
 
@@ -746,7 +741,7 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
       html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
         +'<div class="b4-seat-head">'+avatarHtml(id,name)
         +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot("unknown")+'待核验</span></div>'
-        +'<div class="b4-fresh-stack">'+freshnessChip("状态","never")+freshnessChip("可见","never")+'</div></div>'
+        +'</div>'
         +'<div class="b4-task"><span class="b3-eyebrow">状态说明</span><h4>尚无当前投影</h4><p>还没有取得本席可核验的状态事实。</p></div>'
         +'<div class="b4-seat-foot"><div class="b4-times"><span>等待首次同步</span></div>'+openBtn+'</div></article>';
       continue;
@@ -764,7 +759,7 @@ function renderControlOverview(rows,seatNames,snapshotMeta){
     html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
       +'<div class="b4-seat-head">'+avatarHtml(id,name)
       +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+' '+legacy+'</span></div>'
-      +'<div class="b4-fresh-stack">'+freshnessChip("状态",row.freshness)+freshnessChip("可见",row.observer_freshness)+'</div></div>'
+      +'</div>'
       +'<div class="b4-task"><span class="b3-eyebrow">'+(task.kind==="current"?"当前任务":"最近事项")+'</span>'
       +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p>'
       +(task.meta?'<div class="b4-task-meta">'+esc(task.meta)+'</div>':'')+'</div>'
@@ -785,25 +780,24 @@ function renderControlPersonal(id,name,row,snapshotReadAt){
   }
   const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
   const task=controlTask(row);
-  const sf=controlFreshness(row.freshness),of=controlFreshness(row.observer_freshness);
   const progress=Number.isInteger(row.current_progress)&&row.current_progress>=0&&row.current_progress<=100
     ?row.current_progress:null;
-  const reportRelative=relativeControlTime(row.last_report_at);
-  const observedRelative=relativeControlTime(row.last_observed_at);
+  const workAt=row.last_real_work_at||row.last_report_at;
+  const workRelative=relativeControlTime(workAt);
   const hero='<section class="b3-personal-hero b4-personal-hero">'
     +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div>'
     +'<span class="b3-kicker">席位详情</span><h3>'+esc(name)+' · '+esc(activity.label)+'</h3>'
-    +'<p>'+dot(activity.sec)+'状态'+esc(sf.label)+' · 可见'+esc(of.label)+' · '+esc(controlMode(row))+'</p></div></div>'
+    +'<p>'+dot(activity.sec)+esc(controlMode(row))+' · 无新工作时不会自动刷新记录</p></div></div>'
     +'<div class="b3-personal-metrics">'
     +'<div><span>状态</span><strong>'+esc(activity.label)+'</strong></div>'
     +'<div><span>进度</span><strong>'+(progress==null?"—":esc(progress+"%"))+'</strong></div>'
-    +'<div><span>事实</span><strong class="b4-time-value">'+esc(reportRelative)+'</strong></div>'
-    +'<div><span>可见</span><strong class="b4-time-value">'+esc(observedRelative)+'</strong></div>'
+    +'<div><span>最近工作</span><strong class="b4-time-value">'+esc(workRelative)+'</strong></div>'
+    +'<div><span>记录版本</span><strong>'+esc(row.revision==null?"—":row.revision)+'</strong></div>'
     +'</div>'
-    +'<p class="b3-personal-source">事实时间：'+esc(formatDateTime(row.last_report_at))
-    +' · 观察时间：'+esc(formatDateTime(row.last_observed_at))
+    +'<p class="b3-personal-source">最近工作：'+esc(formatDateTime(workAt))
+    +' · 最近事实：'+esc(formatDateTime(row.last_report_at))
     +(snapshotReadAt?' · 页面读取：'+esc(formatDateTime(new Date(snapshotReadAt).toISOString())):'')
-    +' · revision '+esc(row.revision==null?"—":row.revision)+'</p></section>';
+    +'</p></section>';
 
   const related=task.secondary.length
     ?'<div class="b4-personal-related"><span>同批事项</span><ul>'
