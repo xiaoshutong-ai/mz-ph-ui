@@ -71,6 +71,23 @@
       "mirror_contract": ".github/workflows/public-mirror-contract.yml",
       "publication_mode": "mirror",
       "migration_state": "canonical-source-established"
+    },
+    {
+      "public_paths": [
+        "phone-host-panel.js"
+      ],
+      "canonical_repository": "xiaoshutong-ai/xiaoshutong-product",
+      "canonical_root": "ops/public-web",
+      "canonical_commit": "2b9a69414c115faa0f983b0bf96f167ee07f7c88",
+      "canonical_paths": [
+        "ops/public-web/phone-host-panel.js"
+      ],
+      "mirror_contract": ".github/workflows/security.yml",
+      "publication_mode": "mirror",
+      "migration_state": "canonical-source-established",
+      "sha256": {
+        "phone-host-panel.js": "8ff35e0d4394981baa14d5d7c4bb43bb088f22c24d8e7532e1456d532c5c89d5"
+      }
     }
   ],
   "mixed_files": [
