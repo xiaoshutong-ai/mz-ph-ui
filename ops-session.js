@@ -9,6 +9,7 @@ const SESSION_MAX_AGE_MS=8*60*60*1000;
 
 let accessToken="";
 let refreshPromise=null;
+let sessionGeneration=0;
 
 function authRequiredError(message="身份验证失败或会话已失效"){
   const error=new Error(message);
@@ -24,6 +25,8 @@ function setAccessToken(value){
   return accessToken;
 }
 function clearStorage(){
+  sessionGeneration++;
+  refreshPromise=null;
   sessionStorage.removeItem(REFRESH_STORAGE_KEY);
   sessionStorage.removeItem(SESSION_STARTED_STORAGE_KEY);
   clearAccessToken();
@@ -61,6 +64,7 @@ function acceptAuthSession(value,{resetAge=false}={}){
 async function performRefresh(){
   const refreshToken=readRefreshToken();
   if(!refreshToken)throw authRequiredError();
+  const generation=sessionGeneration;
   const response=await fetch(BASE+"/auth/v1/token?grant_type=refresh_token",{
     method:"POST",
     headers:{apikey:PUB,"Content-Type":"application/json","Accept":"application/json"},
@@ -68,6 +72,7 @@ async function performRefresh(){
   });
   let value={};
   try{value=await response.json();}catch(_e){}
+  if(generation!==sessionGeneration)throw authRequiredError("会话已变更");
   if(!response.ok){
     if(response.status===400||response.status===401||response.status===403){
       clearStorage();
