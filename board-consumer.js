@@ -629,65 +629,9 @@ function controlPrimaryTask(tasks,activity){
 }
 
 function controlTask(row){
-  const activity=String(row?.activity_state||"unknown");
-  const active=activity==="busy"||activity==="blocked";
-  const currentTitle=String(row?.current_task_title||"").trim();
-  const currentDetail=String(row?.current_task_detail||"").trim();
-  const lastTitle=String(row?.last_task_title||"").trim();
-  const lastDetail=String(row?.last_task_detail||"").trim();
-
-  const sourceDetail=active&&currentDetail?currentDetail:lastDetail;
-  const snap=controlDetailSnapshot(sourceDetail);
-  const primary=controlPrimaryTask(snap.tasks,activity);
-  const titleSource=active&&currentTitle?currentTitle:lastTitle;
-  const preferPrimary=Boolean(primary&&isGenericControlTitle(titleSource));
-  const titleMeta=isMetaControlTitle(titleSource)&&!primary;
-  const displayTitle=humanizeControlTitle(titleSource);
-  const primaryTitle=humanizeControlTitle(primary?.title)||compactControlText(primary?.title,140);
-  const fallbackTitle=active?"当前任务待核验":"暂无可核验任务";
-  const title=preferPrimary
-    ?(primaryTitle||displayTitle||fallbackTitle)
-    :(displayTitle||primaryTitle||fallbackTitle);
-
-  let detail="";
-  if(activity==="blocked"&&row?.last_blocker){
-    detail=String(row.last_blocker);
-  }else if(primary){
-    if(activity==="blocked"){
-      detail=primary.blocker||primary.next||primary.result||primary.scope||primary.status;
-    }else if(activity==="busy"){
-      detail=primary.next||primary.result||primary.scope||primary.status;
-    }else{
-      detail=primary.result||primary.next||primary.scope||primary.evidence||primary.status;
-    }
-  }else if(snap.kind==="text"){
-    detail=snap.text;
-  }else if(active&&currentDetail){
-    detail=currentDetail;
-  }
-
-  if(titleMeta){
-    detail=active
-      ?"旧上报含说明性文案，任务标题等待下一次可信状态更新"
-      :"旧上报含说明性文案，最近事项等待重新核验";
-  }else if(!detail){
-    detail=activity==="blocked"?"阻塞原因尚未上报":
-      activity==="busy"?"进展说明尚未上报":
-      snap.confirmedEmpty?"本席已确认当前没有有效任务":
-      "暂无可核验的任务说明";
-  }
-
-  const secondary=(snap.tasks||[]).filter(task=>task!==primary).slice(0,2);
-  const meta=[];
-  if(snap.tasks.length) meta.push(snap.tasks.length+" 项已核验事项");
-  if(snap.checked_at) meta.push("核验 "+relativeControlTime(snap.checked_at));
-  return {
-    title:compactControlText(title,140),
-    detail:compactControlText(detail,220),
-    kind:active&&currentTitle?"current":"last",
-    meta:meta.join(" · "),
-    secondary
-  };
+  // Current work has exactly one authority. Completed/v1 titles are never a fallback.
+  const trusted=activeControlClaim(row)&&row.freshness==="fresh";
+  return {title:trusted&&typeof row.current_task_title==="string"?row.current_task_title.trim():""};
 }
 
 function activeControlClaim(row){
@@ -718,123 +662,126 @@ function freshnessChip(label,value){
   return '<span class="b4-fresh b4-fresh-'+esc(fresh.key)+'" aria-label="'+esc(label+fresh.label)+'"><span>'+esc(label)+'</span><b>'+esc(fresh.label)+'</b></span>';
 }
 
-function controlTimeLine(row){
-  const workAt=row?.last_real_work_at||row?.last_report_at;
-  const work=relativeControlTime(workAt);
-  const workExact=workAt?formatDateTime(workAt):"暂无工作记录";
-  return '<span title="最近工作：'+esc(workExact)+'">最近工作 '+esc(work)+'</span>';
+const CONTROL_EVENT_LABEL={
+  TASK_STARTED:"开始任务",TASK_UPDATED:"更新任务",TASK_FINISHED:"任务完成",
+  BLOCKED:"遇到阻塞",UNBLOCKED:"解除阻塞",STATUS_CHANGED:"状态变化",
+  REVIEW_FINISHED:"评审完成",REVIEW_COMPLETED:"评审完成",
+  PR_MERGED:"合入完成",CI_COMPLETED:"CI 完成",GOAL_COMPLETED:"目标完成",
+  PROJECT_FACT:"项目事实"
+};
+function formatControlTime(value,mode="full"){
+  const ms=Date.parse(String(value||""));
+  if(!Number.isFinite(ms)) return "未上报";
+  const d=new Date(ms),pad=n=>String(n).padStart(2,"0");
+  const time=pad(d.getHours())+":"+pad(d.getMinutes());
+  if(mode==="time") return time;
+  const date=pad(d.getMonth()+1)+"/"+pad(d.getDate());
+  return (mode==="short"?date:d.getFullYear()+"/"+date)+" "+time;
 }
-
-function renderControlOverview(rows,seatNames,snapshotMeta){
+function eventScalar(value){return typeof value==="string"?value.trim():"";}
+function eventProject(item){
+  return eventScalar(item.project_name)||eventScalar(item.project_id)||eventScalar(item.project)
+    ||eventScalar(item.project?.name)||eventScalar(item.project?.id);
+}
+function controlHistoryForSeat(history,id,nowMs=Date.now()){
+  const seat=Array.isArray(history?.seats)?history.seats.find(s=>s?.agent_id===id):null;
+  const date=new Date(nowMs),start=new Date(date.getFullYear(),date.getMonth(),date.getDate()).getTime();
+  const end=new Date(date.getFullYear(),date.getMonth(),date.getDate()+1).getTime();
+  const seen=new Set(),all=[];
+  const candidates=[...(Array.isArray(seat?.today_events)?seat.today_events:[]),
+    ...(Array.isArray(seat?.recent_events)?seat.recent_events:[]),
+    ...(Array.isArray(seat?.project_evidence)?seat.project_evidence:[]),seat?.latest_event];
+  for(const item of candidates){
+    if(!item||typeof item!=="object"||Array.isArray(item))continue;
+    const type=eventScalar(item.event_type).toUpperCase();
+    if(!Object.hasOwn(CONTROL_EVENT_LABEL,type)||item.observation_only===true||item.semantic_changed===false)continue;
+    const ms=Date.parse(String(item.created_at||""));
+    if(!Number.isFinite(ms)||ms>nowMs)continue;
+    const title=eventScalar(item.title),detail=eventScalar(item.detail);
+    const project=eventProject(item),source=eventScalar(item.source);
+    const key=item.id!=null?String(item.id):JSON.stringify([ms,type,title,detail,project,source]);
+    if(seen.has(key))continue;
+    seen.add(key);all.push({id:key,event_type:type,created_at:item.created_at,ms,title,detail,project,source});
+  }
+  all.sort((a,b)=>b.ms-a.ms||b.id.localeCompare(a.id,undefined,{numeric:true}));
+  return {available:!!seat,today:all.filter(e=>e.ms>=start&&e.ms<end),recent:all.filter(e=>e.ms<start),latest:all[0]||null};
+}
+function controlEventSource(value){
+  return {muse:"Muse 只读观察","muse-observe":"Muse 只读观察",muse_observation:"Muse 只读观察",
+    xstpilot:"xstpilot",github:"GitHub / CI","legacy-github":"GitHub / CI","github-actions":"GitHub / CI"}[value]||value;
+}
+function renderControlEvents(events,{detail=false,recent=false}={}){
+  if(!events.length)return '<p class="b5-events-empty">'+(recent?"暂无近期工作事实":"今日暂无已完成事项")+'</p>';
+  return '<ol class="b5-events'+(detail?' b5-events-detail':'')+'">'+events.map(e=>
+    '<li class="b5-event" data-work-event="'+esc(e.id)+'">'
+    +'<time datetime="'+esc(e.created_at)+'">'+esc(formatControlTime(e.created_at,recent?"full":"time"))+'</time>'
+    +'<div class="b5-event-body"><div class="b5-event-heading"><span class="b5-event-type">'+esc(CONTROL_EVENT_LABEL[e.event_type])
+    +'</span><strong>'+esc(e.title)+'</strong></div>'
+    +(detail&&e.detail?'<p class="b5-event-detail">'+esc(e.detail)+'</p>':'')
+    +(detail&&(e.project||e.source)?'<div class="b5-event-context">'
+      +(e.project?'<span class="b5-event-project">所属项目：'+esc(e.project)+'</span>':'')
+      +(e.source?'<span class="b5-event-source">来源：'+esc(controlEventSource(e.source))+'</span>':'')+'</div>':'')
+    +'</div></li>').join("")+'</ol>';
+}
+function controlTimeLine(row){
+  return '<span>最新上报：'+esc(formatControlTime(row?.last_report_at,"short"))+'</span>';
+}
+function renderControlOverview(rows,seatNames,snapshotMeta,history,nowMs=Date.now()){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
-  const summary=controlSummary(rows,seatNames);
-  const attention=summary.blocked>0||summary.unknown>0||summary.stale>0;
-
-  let html='<section class="b4-summary" aria-label="全院当前状态">'
-    +'<div class="b4-summary-copy"><span class="b3-kicker">全院概览</span><h3>六席工作状态</h3>'
-    +'<p>有工作变化才更新；没有新工作就保留最近记录，不用心跳制造“新鲜”。</p></div>'
+  const summary=controlSummary(rows||[],seatNames),attention=summary.blocked+summary.stale+summary.unknown;
+  let html='<section class="b4-summary"><div class="b4-summary-copy"><span class="b3-kicker">全院概览</span>'
+    +'<h3>六席当前态势</h3><p>有工作变化才更新；当前事项与已发生的工作事实分别展示。</p></div>'
     +'<div class="b4-summary-health '+(attention?"watch":"good")+'"><span>'+(attention?"需要关注":"运行平稳")+'</span><strong>'
-    +(summary.busy+summary.blocked)+'</strong><small>当前在办</small></div>'
-    +'<div class="b4-metrics">'
+    +(summary.busy+summary.blocked)+'</strong><small>当前在办</small></div><div class="b4-metrics">'
     +'<div class="b4-metric"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
     +'<div class="b4-metric attention"><span>受阻</span><strong>'+summary.blocked+'</strong></div>'
     +'<div class="b4-metric"><span>空闲</span><strong>'+summary.idle+'</strong></div>'
     +'<div class="b4-metric"><span>待核验</span><strong>'+summary.unknown+'</strong></div>'
-    +'<div class="b4-metric attention"><span>状态陈旧</span><strong>'+summary.stale+'</strong></div>'
-    +'</div></section>';
-
-  html+='<div class="b4-grid">';
+    +'<div class="b4-metric attention"><span>状态陈旧</span><strong>'+summary.stale+'</strong></div></div></section><div class="b4-grid">';
   for(const [id,name] of Object.entries(seatNames||{})){
-    const row=byId.get(id);
-    const openBtn='<button type="button" class="b3-open-seat b4-open-seat" data-agent="'+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">个人看板 <span aria-hidden="true">↗</span></button>';
-    if(!row){
-      html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+'">'
-        +'<div class="b4-seat-head">'+avatarHtml(id,name)
-        +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot("unknown")+'待核验</span></div>'
-        +'</div>'
-        +'<div class="b4-task"><span class="b3-eyebrow">状态说明</span><h4>尚无当前投影</h4><p>还没有取得本席可核验的状态事实。</p></div>'
-        +'<div class="b4-seat-foot"><div class="b4-times"><span>等待首次同步</span></div>'+openBtn+'</div></article>';
-      continue;
-    }
-
-    const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
-    const task=controlTask(row);
-    const staleActive=staleActiveControlClaim(row);
-    const freshness='<div class="b4-fresh-stack">'
-      +freshnessChip("状态",row.freshness)
-      +freshnessChip("观察",row.observer_freshness)
-      +'</div>';
-    const secondary=task.secondary.length
-      ?'<ul class="b4-related">'+task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(humanizeControlTitle(item.title)||compactControlText(item.title,90))+'</span></li>').join("")+'</ul>'
-      :"";
-    const legacy=row.refresh_mode==="legacy_passive"
-      ?'<span class="b4-mode b4-mode-passive">被动</span>'
-      :'<span class="b4-mode">只读</span>';
-
-    html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+(staleActive?' is-stale-claim':'')+'">'
+    const row=byId.get(id),staleActive=!!row&&staleActiveControlClaim(row);
+    const activity=CONTROL_ACTIVITY[row?.activity_state]||CONTROL_ACTIVITY.unknown;
+    const task=row?controlTask(row):{title:""};
+    const work=controlHistoryForSeat(history,id,nowMs);
+    html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+(staleActive?' is-stale-claim':'')+'" data-seat="'+esc(id)+'">'
       +'<div class="b4-seat-head">'+avatarHtml(id,name)
-      +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span>'+dot(activity.sec)+esc(activity.label)+' '+legacy+'</span></div>'
-      +freshness+'</div>'
-      +'<div class="b4-task"><span class="b3-eyebrow">'+(staleActive?"上次在办 · 待核验":task.kind==="current"?"当前任务":"最近事项")+'</span>'
-      +'<h4>'+esc(task.title)+'</h4><p>'+esc(task.detail)+'</p>'
-      +(task.meta?'<div class="b4-task-meta">'+esc(task.meta)+'</div>':'')+'</div>'
-      +secondary
-      +'<div class="b4-seat-foot"><div class="b4-times">'+controlTimeLine(row)+'</div>'+openBtn+'</div></article>';
+      +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span data-activity-state="'+esc(row?.activity_state||"unknown")+'">'
+      +dot(staleActive?"unknown":activity.sec)+esc(staleActive?"状态陈旧 · 待核验":activity.label)+'</span></div>'
+      +'<div class="b4-fresh-stack">'+freshnessChip("状态",row?.freshness)+freshnessChip("观察",row?.observer_freshness)+'</div></div>'
+      +'<div class="b4-task"><span class="b3-eyebrow">当前事项</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
+      +'<section class="b5-card-history" aria-label="今日已完成事项"><h5>今日已完成事项 <span>'+work.today.length+'</span></h5>'
+      +(work.available?renderControlEvents(work.today):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+      +'<div class="b4-seat-foot"><div class="b4-times">'+controlTimeLine(row)+'</div>'
+      +'<a class="b3-open-seat b4-open-seat" href="studyroom-agent.html?seat='+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">个人看板 <span aria-hidden="true">↗</span></a></div></article>';
   }
   html+='</div>';
-
-  if(snapshotMeta){
-    html+='<p class="b3-caption b4-caption">'+esc(snapshotMeta)+' · 正式交付仍以 Goal、PR、Review、CI 与设备验收证据为准。</p>';
-  }
+  if(snapshotMeta)html+='<p class="b3-caption b4-caption">'+esc(snapshotMeta)+' · 正式交付以 Goal、PR、Review、CI 与设备证据为准。</p>';
   return html;
 }
-
-function renderControlPersonal(id,name,row,snapshotReadAt){
-  if(!row){
-    return '<div class="b3-personal-empty"><strong>暂未取得本席当前状态</strong><span>无法确认任务或活动状态。</span></div>';
-  }
-  const activity=CONTROL_ACTIVITY[row.activity_state]||CONTROL_ACTIVITY.unknown;
-  const task=controlTask(row);
-  const progress=Number.isInteger(row.current_progress)&&row.current_progress>=0&&row.current_progress<=100
-    ?row.current_progress:null;
-  const workAt=row.last_real_work_at||row.last_report_at;
-  const workRelative=relativeControlTime(workAt);
-  const hero='<section class="b3-personal-hero b4-personal-hero">'
-    +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div>'
-    +'<span class="b3-kicker">席位详情</span><h3>'+esc(name)+' · '+esc(activity.label)+'</h3>'
-    +'<p>'+dot(activity.sec)+esc(controlMode(row))+' · 无新工作时不会自动刷新记录</p></div></div>'
-    +'<div class="b3-personal-metrics">'
-    +'<div><span>状态</span><strong>'+esc(activity.label)+'</strong></div>'
-    +'<div><span>进度</span><strong>'+(progress==null?"—":esc(progress+"%"))+'</strong></div>'
-    +'<div><span>最近工作</span><strong class="b4-time-value">'+esc(workRelative)+'</strong></div>'
-    +'<div><span>记录版本</span><strong>'+esc(row.revision==null?"—":row.revision)+'</strong></div>'
-    +'</div>'
-    +'<p class="b3-personal-source">最近工作：'+esc(formatDateTime(workAt))
-    +' · 最近事实：'+esc(formatDateTime(row.last_report_at))
-    +(snapshotReadAt?' · 页面读取：'+esc(formatDateTime(new Date(snapshotReadAt).toISOString())):'')
-    +'</p></section>';
-
-  const related=task.secondary.length
-    ?'<div class="b4-personal-related"><span>同批事项</span><ul>'
-      +task.secondary.map(item=>'<li>'+dot(item.sec)+'<span>'+esc(humanizeControlTitle(item.title)||compactControlText(item.title,120))+'</span></li>').join("")
-      +'</ul></div>'
-    :"";
-
-  const body='<article class="b3-task-card b4-personal-task"><div class="b3-task-head"><div>'
-    +'<span class="b3-task-id">'+esc(task.kind==="current"?"CURRENT":"LAST")+'</span>'
-    +'<h4>'+esc(task.title)+'</h4></div>'
-    +'<div class="b3-task-state"><span class="b3-pill '+(activity.sec==="blocked"?"b3-p-blocked":activity.sec==="doing"?"b3-p-doing":"b3-p-wait")+'">'
-    +esc(activity.label)+'</span></div></div>'
-    +'<div class="b3-keyfacts">'
-    +'<div class="b3-keyfact result"><span>状态摘要</span><p>'+esc(task.detail)+'</p></div>'
-    +(task.meta?'<div class="b3-keyfact evidence"><span>核验信息</span><p>'+esc(task.meta)+'</p></div>':'')
-    +(row.last_blocker?'<div class="b3-keyfact blocked"><span>阻塞原因</span><p>'+esc(compactControlText(row.last_blocker,500))+'</p></div>':'')
-    +'<div class="b3-keyfact evidence"><span>状态来源</span><p>'+esc(controlMode(row))
-    +(row.report_source?' · '+esc(row.report_source):'')+'</p></div>'
-    +'</div>'+related+'</article>';
-
-  return hero+body
-    +'<p class="b3-caption">这是当前状态投影，不是完整任务历史；正式工程交付仍以 GitHub/CI 等证据为准。</p>';
+function renderControlPersonal(id,name,row,snapshotReadAt,history,nowMs=Date.now()){
+  const staleActive=!!row&&staleActiveControlClaim(row);
+  const activity=CONTROL_ACTIVITY[row?.activity_state]||CONTROL_ACTIVITY.unknown;
+  const state=staleActive?"状态陈旧 · 待核验":activity.label;
+  const task=row?controlTask(row):{title:""};
+  const work=controlHistoryForSeat(history,id,nowMs);
+  const latestAt=work.latest?.created_at||row?.last_report_at;
+  const hero='<section class="b3-personal-hero b4-personal-hero b5-personal-hero">'
+    +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div><span class="b3-kicker">席位详情</span><h3>'+esc(name)+' · 个人看板</h3>'
+    +'<p>'+dot(staleActive?"unknown":activity.sec)+esc(state)+'</p></div></div>'
+    +'<div class="b5-personal-fresh">'+freshnessChip("状态",row?.freshness)+freshnessChip("观察",row?.observer_freshness)+'</div>'
+    +'<div class="b4-task b5-personal-current"><span class="b3-eyebrow">当前事项</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
+    +'<dl class="b5-personal-facts"><div><dt>最新上报</dt><dd>最新上报：'+esc(formatControlTime(row?.last_report_at))+'</dd></div>'
+    +'<div><dt>最近事实</dt><dd>最近事实：'+esc(formatControlTime(latestAt))+'</dd></div></dl>'
+    +'<p class="b3-personal-source">revision '+esc(row?.revision??"—")
+    +' · 最近观察：'+esc(formatControlTime(row?.last_observed_at))+'（仅用于可见性判断）'
+    +(snapshotReadAt?' · 页面读取：'+esc(formatControlTime(new Date(snapshotReadAt).toISOString())):'')+'</p></section>';
+  return hero+'<section class="b5-personal-section" aria-labelledby="b5TodayTitle"><div class="b5-section-head"><h3 id="b5TodayTitle">今日已完成事项</h3><span>'+work.today.length+' 条</span></div>'
+    +'<p class="b5-section-note">完整展示今日语义工作与状态变化，保留原事件类型；开始或受阻记录不表示任务已完成。</p>'
+    +(work.available?renderControlEvents(work.today,{detail:true}):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+    +'<section class="b5-personal-section" aria-labelledby="b5RecentTitle"><div class="b5-section-head"><h3 id="b5RecentTitle">最近项目事实 / 近期工作</h3><span>'+work.recent.length+' 条</span></div>'
+    +'<p class="b5-section-note">这里单独展示非今日的有效事实；只有来源明确提供的所属项目才会显示。</p>'
+    +renderControlEvents(work.recent,{detail:true,recent:true})+'</section>'
+    +'<p class="b3-caption">没有新工作时，工作时间保持不动。正式工程交付仍以 GitHub / CI / Goal / PR 证据为准。</p>';
 }
 
 return {
@@ -843,7 +790,7 @@ return {
   parseTaskDetail, validateV1, validateControlRows,
   humanizeControlTitle,
   renderOverview, renderPersonal,
-  renderControlOverview, renderControlPersonal
+  renderControlOverview, renderControlPersonal, controlHistoryForSeat, formatControlTime
 };
 })();
 if(typeof module !== "undefined" && module.exports) module.exports = BoardConsumer;
