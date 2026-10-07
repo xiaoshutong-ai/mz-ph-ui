@@ -715,7 +715,7 @@ function controlTimeLine(row){
   const observed=relativeControlTime(row?.last_observed_at);
   const reportExact=row?.last_report_at?formatDateTime(row.last_report_at):"未曾更新";
   const observedExact=row?.last_observed_at?formatDateTime(row.last_observed_at):"未曾读取";
-  return '<span title="状态上报：'+esc(reportExact)+'">上报 '+esc(report)+'</span>'
+  return '<span title="事实时间：'+esc(reportExact)+'">事实 '+esc(report)+'</span>'
     +'<span title="最近可见：'+esc(observedExact)+'">可见 '+esc(observed)+'</span>';
 }
 
@@ -797,10 +797,10 @@ function renderControlPersonal(id,name,row,snapshotReadAt){
     +'<div class="b3-personal-metrics">'
     +'<div><span>状态</span><strong>'+esc(activity.label)+'</strong></div>'
     +'<div><span>进度</span><strong>'+(progress==null?"—":esc(progress+"%"))+'</strong></div>'
-    +'<div><span>上报</span><strong class="b4-time-value">'+esc(reportRelative)+'</strong></div>'
+    +'<div><span>事实</span><strong class="b4-time-value">'+esc(reportRelative)+'</strong></div>'
     +'<div><span>可见</span><strong class="b4-time-value">'+esc(observedRelative)+'</strong></div>'
     +'</div>'
-    +'<p class="b3-personal-source">状态时间：'+esc(formatDateTime(row.last_report_at))
+    +'<p class="b3-personal-source">事实时间：'+esc(formatDateTime(row.last_report_at))
     +' · 观察时间：'+esc(formatDateTime(row.last_observed_at))
     +(snapshotReadAt?' · 页面读取：'+esc(formatDateTime(new Date(snapshotReadAt).toISOString())):'')
     +' · revision '+esc(row.revision==null?"—":row.revision)+'</p></section>';
