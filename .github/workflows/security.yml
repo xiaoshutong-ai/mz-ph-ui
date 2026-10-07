@@ -328,6 +328,7 @@ jobs:
               "style.css",
               "entry.js",
               "account.js",
+              "phone-host-panel.js",
               "app.js",
               ".github/workflows/pages.yml",
               ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
@@ -394,6 +395,12 @@ jobs:
                   raise SystemExit("independent seat mirrors require v3 canonical provenance")
               target_expected_provenance_v3[("xiaoshutong-ai/xiaoshutong-shuyuan", "ops/public-web")].update(
                   {"studyroom-agent.html", "studyroom-agent-client.js"})
+          phone_host_key = ("xiaoshutong-ai/xiaoshutong-product", "ops/public-web")
+          phone_host_present = any(rel == "phone-host-panel.js" for rel, _path in tracked)
+          if phone_host_present:
+              if schema_version != 3:
+                  raise SystemExit("phone host mirror requires v3 provenance")
+              target_expected_provenance_v3[phone_host_key] = {"phone-host-panel.js"}
           allowed_provenance = {1: expected_provenance, 2: target_expected_provenance_v2, 3: target_expected_provenance_v3}[schema_version]
           seen_provenance = {}
           for item in artifacts:
@@ -403,6 +410,32 @@ jobs:
               paths = item.get("public_paths")
               if key not in allowed_provenance or not isinstance(paths, list):
                   raise SystemExit("unapproved public artifact provenance owner")
+              if key in seen_provenance:
+                  raise SystemExit("duplicate public artifact provenance owner")
+              if key == phone_host_key:
+                  phone_host_fields = {
+                      "public_paths", "canonical_repository", "canonical_root",
+                      "canonical_commit", "canonical_paths", "mirror_contract",
+                      "publication_mode", "migration_state", "sha256",
+                  }
+                  if set(item) != phone_host_fields or paths != ["phone-host-panel.js"]:
+                      raise SystemExit("phone host mirror metadata boundary drifted")
+                  if item.get("canonical_paths") != ["ops/public-web/phone-host-panel.js"]:
+                      raise SystemExit("phone host canonical source path drifted")
+                  if not re.fullmatch(r"[0-9a-f]{40}", str(item.get("canonical_commit", ""))):
+                      raise SystemExit("phone host canonical commit must be exact")
+                  if item.get("mirror_contract") != ".github/workflows/security.yml":
+                      raise SystemExit("phone host mirror contract drifted")
+                  if item.get("publication_mode") != "mirror" or item.get("migration_state") != "canonical-source-established":
+                      raise SystemExit("phone host publication boundary drifted")
+                  digests = item.get("sha256")
+                  mirror_path = Path("phone-host-panel.js")
+                  if (not isinstance(digests, dict) or set(digests) != {"phone-host-panel.js"}
+                          or mirror_path.is_symlink() or not mirror_path.is_file()
+                          or digests["phone-host-panel.js"] != hashlib.sha256(mirror_path.read_bytes()).hexdigest()):
+                      raise SystemExit("phone host public mirror byte digest mismatch")
+                  # Private canonical bytes are checked by authenticated review;
+                  # public CI binds the reviewed commit/path/digest declaration.
               seen_provenance[key] = set(paths)
               if item.get("publication_mode") not in {"mirror", "generated"}:
                   raise SystemExit("public artifact provenance publication mode invalid")
