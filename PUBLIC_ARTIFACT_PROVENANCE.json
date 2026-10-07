@@ -17,7 +17,7 @@
       ],
       "canonical_repository": "xiaoshutong-ai/xiaoshutong-shuyuan",
       "canonical_root": "ops/public-web",
-      "canonical_commit": "3bb95293df1934ddaf5dc86860a4e5eb7d87c8c8",
+      "canonical_commit": "b1e8dadabf949fd92e177db0249b19b759d24a7b",
       "canonical_paths": [
         "ops/public-web/studyroom.html",
         "ops/public-web/board-consumer.js",
