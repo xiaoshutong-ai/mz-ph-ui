@@ -1228,11 +1228,12 @@ jobs:
           assert.throws(()=>B.validateControlRows([{...row("bi"),current_progress:101}],N));
 
           const overview=B.renderControlOverview(
-            B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,freshness:"stale"}:r),N),N,"fixture"
+            B.validateControlRows(rows.map(r=>r.agent_id==="mo"?{...r,activity_state:"busy"}:r),N),N,"fixture"
           );
-          assert.match(overview,/状态新鲜/);
-          assert.match(overview,/(观察器在线|最近可见)/);
-          assert.match(overview,/状态陈旧/);
+          assert.match(overview,/工作中/);
+          assert.match(overview,/空闲/);
+          assert.match(overview,/最近工作/);
+          assert.doesNotMatch(overview,/状态新鲜|状态陈旧/);
 
           const style=fs.readFileSync("style.css","utf8");
           const boardV4=style.includes("水墨书院实时看板 v4 · Calm Control Surface");
@@ -1243,7 +1244,7 @@ jobs:
               tasks:[{
                 id:"team-board-v2",sec:"done",title:"总实时看板+个人实时看板",
                 status:"LANDED",result:"六席生产数据持续可读",
-                next:"继续观察自动 heartbeat freshness",main:true
+                next:"继续按事件记录工作变化",main:true
               }],
               checked_at:"2026-10-04T17:16:15Z",source:"governance#9"
             });
@@ -1287,6 +1288,9 @@ jobs:
           assert.match(room,/BoardConsumer\.validateControlRows/);
           assert.match(room,/BoardConsumer\.renderControlOverview/);
           assert.match(room,/SR_AGENT_FOLLOWUP_LIMIT=6/);
+          assert.match(room,/SR_AGENT_STATE_POLL_MS=60000/);
+          assert.match(room,/agentControlApi\("activity_day"\)/);
+          assert.doesNotMatch(room,/SR_AGENT_STATE_POLL_MS=10000/);
           assert.doesNotMatch(room,/\/rest\/v1\/agent_status\?select=/);
           const all=room.slice(room.indexOf("function refreshAll(){"),room.indexOf("(function(){",room.indexOf("function refreshAll(){")));
           assert.match(all,/loadAgents\(\)/);
