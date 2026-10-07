@@ -161,6 +161,20 @@ jobs:
               for marker in ('45000', '60000', 'REPORT_STATUS', 'watchdog'):
                   if marker in seat_client:
                       raise SystemExit("automatic Muse refresh is forbidden: " + marker)
+              pages_contract = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
+              for marker in (
+                  '      - "studyroom-agent.html"',
+                  '      - "studyroom-agent-client.js"',
+                  '              "studyroom-agent.html",',
+                  '              "studyroom-agent-client.js",',
+              ):
+                  if marker not in pages_contract:
+                      raise SystemExit("Pages standalone-seat allowlist missing: " + marker.strip())
+              pages_build = pages_contract.split("Build strict Pages allowlist", 1)[-1]
+              first_cp = next((line.strip() for line in pages_build.splitlines() if line.strip().startswith("cp -- index.html")), "")
+              for artifact in ("studyroom-agent.html", "studyroom-agent-client.js"):
+                  if artifact not in first_cp:
+                      raise SystemExit("Pages build does not stage standalone-seat artifact: " + artifact)
 
           board_consumer = Path("board-consumer.js").read_text(encoding="utf-8")
           style = Path("style.css").read_text(encoding="utf-8")
