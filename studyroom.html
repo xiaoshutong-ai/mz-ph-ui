@@ -1242,8 +1242,9 @@ function renderSrAgentActivity(history){
     const seat=byId.get(id)||{};
     const events=Array.isArray(seat.today_events)?seat.today_events.slice(0,12):[];
     const latest=seat.latest_event&&typeof seat.latest_event==="object"?seat.latest_event:null;
+    const total=Number.isSafeInteger(Number(seat.today_count))?Number(seat.today_count):events.length;
     html+='<article class="sr-work-card"><div class="sr-work-card-head"><strong>'+esc(name)+'</strong>'
-      +'<span>今日 '+events.length+' 条</span></div>';
+      +'<span>今日 '+total+' 条</span></div>';
     if(latest){
       html+='<div class="sr-work-latest"><span>最近工作</span><b>'+esc(srActivityText(latest.title||"状态变化",90))+'</b>'
         +'<small>'+esc(srActivityDateTime(latest.created_at))+'</small></div>';
@@ -1319,12 +1320,9 @@ async function loadAgents(){
   if(btn) btn.disabled=true;
   if(pbtn) pbtn.disabled=true;
   try{
-    const [value,activity]=await Promise.all([
-      agentControlApi("state"),
-      agentControlApi("activity_day")
-    ]);
+    const value=await agentControlApi("state");
     const rows=applySrAgentRows(value.agents,value.snapshot);
-    renderSrAgentActivity(activity.history);
+    renderSrAgentActivity(value.history);
     if(maybeFinishSrAgentFollowup(rows)){
       document.getElementById("srAgentState").textContent=
         rows.length+" 席 · "+srSnapshotShortLabel(_srAgentSnapshot)+" · 刷新完成 · "+new Date(_srAgentReadAt).toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",hour12:false});
@@ -1363,7 +1361,7 @@ async function refreshAgents(){
       "已请求 "+active+" 席按需状态同步"
       +(passive?" · "+passive+" 保持被动同步":"")
       +" · 只读，不制造后台心跳";
-    agentControlApi("activity_day").then(v=>renderSrAgentActivity(v.history)).catch(()=>{});
+    renderSrAgentActivity(value.history);
     startSrAgentFollowup(value.refresh,rows);
   }catch(e){
     document.getElementById("srAgentState").textContent="刷新失败 · "+(e.message||e);
