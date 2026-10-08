@@ -924,8 +924,58 @@ async function delPresetCode(id){
 }
 
 // 六席对话配置
+// Serialize all device/seat writes to keep a trust reload from silently reverting
+// an uncommitted MAIN/SIDE choice. One config save is one authorized backend write.
+let srChatMutationTail=Promise.resolve();
+let srChatMutationPending=0;
+let srChatMutationVersion=0;
+function srQueueChatMutation(write){
+  srChatMutationPending++;
+  const queued=srChatMutationTail.catch(()=>{}).then(write);
+  srChatMutationTail=queued.catch(()=>{});
+  return queued.finally(()=>{srChatMutationPending--;});
+}
+function srChatSeatPayload(cid){
+  const deviceId=document.getElementById("srChatDevice")?.value||"";
+  const field=name=>document.getElementById(name+"-"+cid);
+  const mode=field("srMode"),transport=field("srTransport");
+  const provider=field("srProvider"),model=field("srModel");
+  const soul=field("srSoul"),memory=field("srMemory");
+  if(!deviceId||!mode||!transport||!provider||!model||!soul||!memory)return null;
+  return {
+    device_id:deviceId,character_id:cid,
+    runtime_mode:mode.value,muse_transport:transport.value,
+    api_provider:provider.value,api_model:model.value.trim(),
+    soul_override:soul.value.trim(),memory_enabled:memory.checked,reset:false
+  };
+}
+async function srCommitSeat(cid,message){
+  // Capture the user's selection BEFORE any asynchronous work, not afterward.
+  const payload=srChatSeatPayload(cid);
+  if(!payload)return;
+  const version=++srChatMutationVersion;
+  const status=document.getElementById("srChatStatus");
+  status.textContent="正在保存 "+cid+"…";
+  let result="";
+  try{
+    await srQueueChatMutation(()=>opsApi("studyroom_config_save","POST",payload));
+    result=message;
+  }catch(e){
+    result="保存失败："+e.message;
+  }
+  if(srChatMutationPending===0&&version===srChatMutationVersion){
+    await loadStudyroomChatConfig();
+    status.textContent=result;
+  }
+}
+function saveStudyroomTransport(cid){
+  return srCommitSeat(cid,"Muse 会话已保存");
+}
 function srSelected(v, wanted){ return String(v||"")===wanted ? " selected" : ""; }
 async function loadStudyroomChatConfig(){
+  const version=srChatMutationVersion;
+  if(srChatMutationPending>0)await srChatMutationTail;
+  if(version!==srChatMutationVersion)return;
   const sel = document.getElementById("srChatDevice");
   const deviceId = sel ? sel.value : "";
   const tb = document.getElementById("srChatConfigList");
@@ -938,6 +988,9 @@ async function loadStudyroomChatConfig(){
   status.textContent = "正在读取…";
   try{
     const data = await opsApi("studyroom_config","GET",null,{device_id:deviceId});
+    // A newer dropdown edit or device selection won the race; ignore this read.
+    if(version!==srChatMutationVersion||srChatMutationPending>0
+       ||document.getElementById("srChatDevice")?.value!==deviceId)return;
     const cfg = data.config || {};
     const states = cfg.provider_key_states || {};
     document.getElementById("srMuseTrusted").checked = cfg.device?.muse_trusted === true;
@@ -971,10 +1024,10 @@ async function loadStudyroomChatConfig(){
             +"<option value='API'"+srSelected(mode,"API")+">API</option>"
             +(muse?"<option value='MUSE'"+srSelected(mode,"MUSE")+">Muse</option>":"")
             +"</select><small>"+esc(modeHelp)+"</small></label>"
-          +"<label><span>Muse 会话</span><select id='srTransport-"+cid+"' "+(muse?"":"disabled")+">"
+          +"<label><span>Muse 会话</span><select id='srTransport-"+cid+"' onchange=\"saveStudyroomTransport('"+cid+"')\" "+(muse?"":"disabled")+">"
             +"<option value='MAIN'"+srSelected(transport,"MAIN")+">主对话 · 原话直通</option>"
             +"<option value='SIDE'"+srSelected(transport,"SIDE")+(sideAvailable?"":" disabled")+">旁聊天 · SOUL/Memory</option>"
-            +"</select><small>"+(sideAvailable?"可切换到旁聊天":"旁聊天运行器接入中")+"</small></label>"
+            +"</select><small>切换后自动保存；"+(sideAvailable?"可切换到旁聊天":"旁聊天运行器接入中")+"</small></label>"
         +"</div>"
         +"<details class='sr-chat-advanced'><summary>高级设置</summary><div class='sr-chat-advanced-grid'>"
           +"<label><span>API Provider</span><select id='srProvider-"+cid+"'>"
@@ -1001,76 +1054,54 @@ async function loadStudyroomChatConfig(){
 }
 
 async function saveStudyroomMuseTrust(){
-  const deviceId = document.getElementById("srChatDevice").value;
-  if(!deviceId) return;
-  const box = document.getElementById("srMuseTrusted");
-  const enabled = box.checked;
-  const message = enabled
-    ? "启用后，这台设备的笔/墨/纸/砚/卷可直接连接你的开发 Muse。仅应给你本人控制的设备开启。确定继续？"
-    : "关闭后，该设备所有 Muse 席位会立即退回 API 模式。确定继续？";
+  const deviceId=document.getElementById("srChatDevice").value;
+  if(!deviceId)return;
+  const enabled=document.getElementById("srMuseTrusted").checked;
+  const message=enabled
+    ?"启用后，这台设备的笔/墨/纸/砚/卷可直接连接你的开发 Muse。仅应给你本人控制的设备开启。确定继续？"
+    :"关闭后，该设备所有 Muse 席位会立即退回 API 模式。确定继续？";
   if(!confirm(message)){
+    await srChatMutationTail;
     await loadStudyroomChatConfig();
     return;
   }
-  const status = document.getElementById("srChatStatus");
-  status.textContent = enabled ? "正在启用 Owner Muse 信任…" : "正在关闭 Muse 信任…";
+  const version=++srChatMutationVersion;
+  const status=document.getElementById("srChatStatus");
+  status.textContent=enabled?"正在启用 Owner Muse 信任…":"正在关闭 Muse 信任…";
+  let result="";
   try{
-    await opsApi("studyroom_muse_device_save","POST",{
-      device_id:deviceId,
-      enabled:enabled,
-      note:enabled ? "Owner-approved StudyRoom Muse device" : "Muse disabled"
-    });
-    status.textContent = enabled ? "已启用 Owner Muse 信任" : "已关闭 Muse 信任，Muse 覆盖已退回 API";
-    await loadStudyroomChatConfig();
+    await srQueueChatMutation(()=>opsApi("studyroom_muse_device_save","POST",{
+      device_id:deviceId,enabled,
+      note:enabled?"Owner-approved StudyRoom Muse device":"Muse disabled"
+    }));
+    result=enabled?"已启用 Owner Muse 信任":"已关闭 Muse 信任，Muse 覆盖已退回 API";
   }catch(e){
-    status.textContent = "信任设置失败："+e.message;
+    result="信任设置失败："+e.message;
+  }
+  if(srChatMutationPending===0&&version===srChatMutationVersion){
     await loadStudyroomChatConfig();
+    status.textContent=result;
   }
 }
-
-async function saveStudyroomCharacter(cid){
-  const deviceId = document.getElementById("srChatDevice").value;
-  if(!deviceId) return;
-  const mode = document.getElementById("srMode-"+cid).value;
-  const transport = document.getElementById("srTransport-"+cid).value;
-  const provider = document.getElementById("srProvider-"+cid).value;
-  const model = document.getElementById("srModel-"+cid).value.trim();
-  const soul = document.getElementById("srSoul-"+cid).value.trim();
-  const memory = document.getElementById("srMemory-"+cid).checked;
-  const status = document.getElementById("srChatStatus");
-  status.textContent = "正在保存 "+cid+"…";
-  try{
-    await opsApi("studyroom_config_save","POST",{
-      device_id:deviceId,
-      character_id:cid,
-      runtime_mode:mode,
-      muse_transport:transport,
-      api_provider:provider,
-      api_model:model,
-      soul_override:soul,
-      memory_enabled:memory,
-      reset:false
-    });
-    status.textContent = "已保存";
-    await loadStudyroomChatConfig();
-  }catch(e){
-    status.textContent = "保存失败："+e.message;
-  }
-}
+function saveStudyroomCharacter(cid){return srCommitSeat(cid,"已保存");}
 async function resetStudyroomCharacter(cid){
-  const deviceId = document.getElementById("srChatDevice").value;
-  if(!deviceId || !confirm("恢复该席位在此设备上的默认设置？")) return;
-  const status = document.getElementById("srChatStatus");
+  const deviceId=document.getElementById("srChatDevice").value;
+  if(!deviceId||!confirm("恢复该席位在此设备上的默认设置？"))return;
+  const version=++srChatMutationVersion;
+  const status=document.getElementById("srChatStatus");
+  status.textContent="正在恢复默认…";
+  let result="";
   try{
-    await opsApi("studyroom_config_save","POST",{
-      device_id:deviceId,
-      character_id:cid,
-      reset:true
-    });
-    status.textContent = "已恢复默认";
-    await loadStudyroomChatConfig();
+    await srQueueChatMutation(()=>opsApi("studyroom_config_save","POST",{
+      device_id:deviceId,character_id:cid,reset:true
+    }));
+    result="已恢复默认";
   }catch(e){
-    status.textContent = "恢复失败："+e.message;
+    result="恢复失败："+e.message;
+  }
+  if(srChatMutationPending===0&&version===srChatMutationVersion){
+    await loadStudyroomChatConfig();
+    status.textContent=result;
   }
 }
 
