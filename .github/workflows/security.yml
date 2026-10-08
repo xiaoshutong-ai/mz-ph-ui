@@ -345,7 +345,7 @@ jobs:
               "phone-host-panel.js",
               "app.js",
               ".github/workflows/pages.yml",
-              ".github/workflows/security.yml", "status-public.js", "devices.html", "board-consumer.js",
+              ".github/workflows/security.yml", "devices.html", "board-consumer.js",
           } | set(character_assets)
           allowed_prefixes = (
               "updates/",
@@ -1062,6 +1062,21 @@ jobs:
           for marker in ("AI Provider Hub", "管理员登录", "p2-ai-provider-admin", "api_key"):
               if marker in root:
                   raise SystemExit("operational marker exposed on public root: " + marker)
+          # Cross-project privacy incident: ordinary Mengzheng project visitors
+          # must NEVER get the Shuyuan six-seat work or public status reader.
+          # A hidden element is insufficient; neither the DOM nor scripts may
+          # initiate the status request, and CSP denies all root fetches.
+          for marker in (
+              "书房六席", "六席状态", "agentStatusGrid", "agentStatusRefresh",
+              "agentStatusMeta", "agentStatusState", "status-public.js",
+              "agent_status_public", "studyroom-agent-control",
+          ):
+              if marker in root:
+                  raise SystemExit("MENGZHENG_PUBLIC_ROOT_PRIVATE_STATUS_EXPOSED: " + marker)
+          if "connect-src 'none'" not in root:
+              raise SystemExit("MENGZHENG_PUBLIC_ROOT_NETWORK_DENY_MISSING")
+          if Path("status-public.js").exists():
+              raise SystemExit("OBSOLETE_ANONYMOUS_STATUS_READER_MUST_BE_ABSENT")
           if './app.js' in root:
               raise SystemExit("public root must not load operational app.js")
           if './entry.js' not in root:
@@ -1428,7 +1443,7 @@ jobs:
           import fs from "node:fs";
           const app=fs.readFileSync("app.js","utf8");
           const room=fs.readFileSync("studyroom.html","utf8");
-          const pub=fs.readFileSync("status-public.js","utf8");
+          const root=fs.readFileSync("index.html","utf8");
           const imported=await import("./board-consumer.js");
           const B=imported.default?.renderControlOverview?imported.default:(globalThis.BoardConsumer||imported);
           const N={bi:"笔",mo:"墨",zhi:"纸",yan:"砚",juan:"卷",xia:"匣"};
@@ -1580,9 +1595,11 @@ jobs:
 
           }
 
-          assert.match(pub,/\/rest\/v1\/agent_status_public\?select=\*&order=id/);
-          assert.doesNotMatch(pub,/studyroom-agent-control/);
-          assert.doesNotMatch(pub,/method:\s*"POST"/);
+          assert.doesNotMatch(root,/书房六席|六席状态|agentStatus|status-public|agent_status_public/);
+          assert.match(root,/connect-src 'none'/);
+          assert.match(root,/href="\.\/account\.html"/);
+          assert.match(root,/src="\.\/entry\.js"/);
+          assert.equal(fs.existsSync("status-public.js"),false);
 
           const scripts=[...room.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m=>m[1]).filter(Boolean);
           assert.ok(scripts.length);
