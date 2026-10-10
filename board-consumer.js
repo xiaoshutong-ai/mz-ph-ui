@@ -485,7 +485,7 @@ function validateControlRows(value,seatNames){
     for(const [key,max] of [
       ["display_name",32],["current_task_title",200],["current_task_detail",4000],
       ["last_task_title",200],["last_task_detail",4000],["last_blocker",1000],
-      ["last_report_at",80],["last_observed_at",80],["last_real_work_at",80],["report_source",32]
+      ["last_report_at",80],["last_confirmed_at",80],["report_runtime",32],["last_observed_at",80],["last_real_work_at",80],["report_source",32]
     ]){
       if(row[key]!=null&&(typeof row[key]!=="string"||row[key].length>max))bad(at+" "+key+" 非法");
       result[key]=row[key]||"";
@@ -630,8 +630,9 @@ function controlPrimaryTask(tasks,activity){
 
 function controlTask(row){
   // Current work has exactly one authority. Completed/v1 titles are never a fallback.
-  const trusted=activeControlClaim(row)&&row.freshness==="fresh";
-  return {title:trusted&&typeof row.current_task_title==="string"?row.current_task_title.trim():""};
+  const historical=activeControlClaim(row)&&row.freshness!=="fresh"&&row.report_source==="github-self-report";
+  const trusted=activeControlClaim(row)&&(row.freshness==="fresh"||historical);
+  return {historical,title:trusted&&typeof row.current_task_title==="string"?row.current_task_title.trim():""};
 }
 
 function activeControlClaim(row){
@@ -724,13 +725,14 @@ function renderControlEvents(events,{detail=false,recent=false}={}){
     +'</div></li>').join("")+'</ol>';
 }
 function controlTimeLine(row){
+  if(row?.last_confirmed_at)return '<span>最近确认：'+esc(formatControlTime(row.last_confirmed_at,"short"))+'</span><span>工作变化：'+esc(formatControlTime(row.last_report_at,"short"))+'</span>';
   return '<span>最新上报：'+esc(formatControlTime(row?.last_report_at,"short"))+'</span>';
 }
 function renderControlOverview(rows,seatNames,snapshotMeta,history,nowMs=Date.now()){
   const byId=new Map((rows||[]).map(row=>[row.id,row]));
   const summary=controlSummary(rows||[],seatNames),attention=summary.blocked+summary.stale+summary.unknown;
   let html='<section class="b4-summary"><div class="b4-summary-copy"><span class="b3-kicker">全院概览</span>'
-    +'<h3>六席当前态势</h3><p>有工作变化才更新；当前事项与已发生的工作事实分别展示。</p></div>'
+    +'<h3>六席当前态势</h3><p>成员自主上报；有工作变化才更新工作时间，最近确认单独展示。</p></div>'
     +'<div class="b4-summary-health '+(attention?"watch":"good")+'"><span>'+(attention?"需要关注":"运行平稳")+'</span><strong>'
     +(summary.busy+summary.blocked)+'</strong><small>当前在办</small></div><div class="b4-metrics">'
     +'<div class="b4-metric"><span>工作中</span><strong>'+summary.busy+'</strong></div>'
@@ -743,14 +745,17 @@ function renderControlOverview(rows,seatNames,snapshotMeta,history,nowMs=Date.no
     const activity=CONTROL_ACTIVITY[row?.activity_state]||CONTROL_ACTIVITY.unknown;
     const task=row?controlTask(row):{title:""};
     const work=controlHistoryForSeat(history,id,nowMs);
+  const completed=work.today.filter(e=>["TASK_FINISHED","REVIEW_FINISHED","REVIEW_COMPLETED","PR_MERGED","CI_COMPLETED","GOAL_COMPLETED"].includes(e.event_type));
+  const changes=work.today.filter(e=>!completed.includes(e));
     html+='<article class="b3-seat-card b4-seat-card b4-seat-card-'+esc(id)+(staleActive?' is-stale-claim':'')+'" data-seat="'+esc(id)+'">'
       +'<div class="b4-seat-head">'+avatarHtml(id,name)
       +'<div class="b4-seat-identity"><strong>'+esc(name)+'</strong><span data-activity-state="'+esc(row?.activity_state||"unknown")+'">'
       +dot(staleActive?"unknown":activity.sec)+esc(staleActive?"状态陈旧 · 待核验":activity.label)+'</span></div>'
       +'<div class="b4-fresh-stack">'+freshnessChip("状态",row?.freshness)+freshnessChip("观察",row?.observer_freshness)+'</div></div>'
-      +'<div class="b4-task"><span class="b3-eyebrow">当前事项</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
-      +'<section class="b5-card-history" aria-label="今日已完成事项"><h5>今日已完成事项 <span>'+work.today.length+'</span></h5>'
-      +(work.available?renderControlEvents(work.today):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+      +'<div class="b4-task"><span class="b3-eyebrow">'+(task.historical?"上次确认的工作":"当前事项")+'</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
+      +'<section class="b5-card-history" aria-label="今日已完成事项"><h5>今日已完成事项 <span>'+completed.length+'</span></h5>'
+      +(work.available?renderControlEvents(completed):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+      +(changes.length?'<section class="b5-card-history"><h5>今日工作记录</h5>'+renderControlEvents(changes)+'</section>':'')
       +'<div class="b4-seat-foot"><div class="b4-times">'+controlTimeLine(row)+'</div>'
       +'<a class="b3-open-seat b4-open-seat" href="studyroom-agent.html?seat='+esc(id)+'" aria-label="查看'+esc(name)+'的个人看板">个人看板 <span aria-hidden="true">↗</span></a></div></article>';
   }
@@ -764,20 +769,24 @@ function renderControlPersonal(id,name,row,snapshotReadAt,history,nowMs=Date.now
   const state=staleActive?"状态陈旧 · 待核验":activity.label;
   const task=row?controlTask(row):{title:""};
   const work=controlHistoryForSeat(history,id,nowMs);
+  const completed=work.today.filter(e=>["TASK_FINISHED","REVIEW_FINISHED","REVIEW_COMPLETED","PR_MERGED","CI_COMPLETED","GOAL_COMPLETED"].includes(e.event_type));
+  const changes=work.today.filter(e=>!completed.includes(e));
   const latestAt=work.latest?.created_at||row?.last_report_at;
   const hero='<section class="b3-personal-hero b4-personal-hero b5-personal-hero">'
     +'<div class="b3-personal-identity">'+avatarHtml(id,name)+'<div><span class="b3-kicker">席位详情</span><h3>'+esc(name)+' · 个人看板</h3>'
     +'<p>'+dot(staleActive?"unknown":activity.sec)+esc(state)+'</p></div></div>'
     +'<div class="b5-personal-fresh">'+freshnessChip("状态",row?.freshness)+freshnessChip("观察",row?.observer_freshness)+'</div>'
-    +'<div class="b4-task b5-personal-current"><span class="b3-eyebrow">当前事项</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
+    +'<div class="b4-task b5-personal-current"><span class="b3-eyebrow">'+(task.historical?"上次确认的工作":"当前事项")+'</span><h4 data-current-task>'+esc(task.title)+'</h4></div>'
     +'<dl class="b5-personal-facts"><div><dt>最新上报</dt><dd>最新上报：'+esc(formatControlTime(row?.last_report_at))+'</dd></div>'
+    +(row?.last_confirmed_at?'<div><dt>最近确认</dt><dd>'+esc(formatControlTime(row.last_confirmed_at))+'</dd></div>':'')
     +'<div><dt>最近事实</dt><dd>最近事实：'+esc(formatControlTime(latestAt))+'</dd></div></dl>'
     +'<p class="b3-personal-source">revision '+esc(row?.revision??"—")
     +' · 最近观察：'+esc(formatControlTime(row?.last_observed_at))+'（仅用于可见性判断）'
     +(snapshotReadAt?' · 页面读取：'+esc(formatControlTime(new Date(snapshotReadAt).toISOString())):'')+'</p></section>';
-  return hero+'<section class="b5-personal-section" aria-labelledby="b5TodayTitle"><div class="b5-section-head"><h3 id="b5TodayTitle">今日已完成事项</h3><span>'+work.today.length+' 条</span></div>'
-    +'<p class="b5-section-note">完整展示今日语义工作与状态变化，保留原事件类型；开始或受阻记录不表示任务已完成。</p>'
-    +(work.available?renderControlEvents(work.today,{detail:true}):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+  return hero+'<section class="b5-personal-section" aria-labelledby="b5TodayTitle"><div class="b5-section-head"><h3 id="b5TodayTitle">今日已完成事项</h3><span>'+completed.length+' 条</span></div>'
+    +'<p class="b5-section-note">只展示有明确完成事件的工作，保留实际完成时间。</p>'
+    +(work.available?renderControlEvents(completed,{detail:true}):'<p class="b5-events-empty">今日记录暂不可用</p>')+'</section>'
+    +(changes.length?'<section class="b5-personal-section"><div class="b5-section-head"><h3>今日工作记录</h3><span>'+changes.length+' 条</span></div>'+renderControlEvents(changes,{detail:true})+'</section>':'')
     +'<section class="b5-personal-section" aria-labelledby="b5RecentTitle"><div class="b5-section-head"><h3 id="b5RecentTitle">最近项目事实 / 近期工作</h3><span>'+work.recent.length+' 条</span></div>'
     +'<p class="b5-section-note">这里单独展示非今日的有效事实；只有来源明确提供的所属项目才会显示。</p>'
     +renderControlEvents(work.recent,{detail:true,recent:true})+'</section>'
@@ -794,3 +803,4 @@ return {
 };
 })();
 if(typeof module !== "undefined" && module.exports) module.exports = BoardConsumer;
+
