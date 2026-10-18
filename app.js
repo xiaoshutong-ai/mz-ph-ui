@@ -4162,6 +4162,18 @@ function clearSensitiveBrowserState(){
   token="";
   OPS_SESSION.clearAccessToken();
   runtimeConsumerRawToken="";
+  // Do not retain private Ops Prompt bodies across logout, MFA failure,
+  // browser back-forward cache, session revocation, or account switches.
+  mathPromptCatalog=null;
+  mathPromptRole="curriculum";
+  mathPromptDirty=false;
+  mathPromptBusy=false;
+  for(const id of ["mathPromptText","mathPromptRevision","mathPromptActiveDigest"]){
+    const field=$(id);
+    if(field&&"value" in field)field.value="";
+  }
+  $("mathPromptHistory")?.replaceChildren();
+  $("mathPromptStudio")?.classList.add("hidden");
   for(const id of ["api_key","jev_api_key","mfaCode","mfaSecret","backupTotpSecret","backupTotpCode"]){
     const node=$(id);
     if(node&&"value" in node)node.value="";
