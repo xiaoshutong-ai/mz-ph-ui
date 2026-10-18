@@ -4288,6 +4288,11 @@ $("aiEntitlementSearch").addEventListener("keydown",event=>{
 $("projectSelect").addEventListener("change",()=>{
   const next=$("projectSelect").value;
   if(!opsMemberships.some(p=>p?.project_key===next))return;
+  if(selectedProjectKey==="xiaoshutong"&&next!==selectedProjectKey&&mathPromptDirty
+    &&!confirm("AI 审核 Prompt 还未保存。放弃本地修改并切换项目？")){
+    $("projectSelect").value=selectedProjectKey;return;
+  }
+  if(selectedProjectKey==="xiaoshutong"&&next!==selectedProjectKey)mathPromptDirty=false;
   selectedProjectKey=next;
   applyProjectSelection().then(()=>loadAgentStatusOps()).catch(error=>{
     $("projectIntegrationNote").textContent="项目切换失败："+error.message;
