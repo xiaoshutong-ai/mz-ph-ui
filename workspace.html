@@ -529,6 +529,69 @@
       </div>
     </section>
 
+    <!-- Goal149: prompt editing belongs to the authenticated Ops Hub, not the public project page. -->
+    <section id="mathPromptStudio" class="card hidden" aria-labelledby="mathPromptHeading">
+      <div class="section-title">
+        <div>
+          <div class="eyebrow">小书童 · 题库质量 Gate</div>
+          <h2 id="mathPromptHeading">AI 教研 Prompt 工作台</h2>
+          <p class="muted">四类独立审核角色的 Prompt 均可在此编辑、保存版本、启用审核模板及回滚。</p>
+        </div>
+        <span id="mathPromptBadge" class="badge">安全草稿模式</span>
+      </div>
+      <div class="policy-note">
+        仅管理内部 AI 教研审核模板，不修改不可编辑的数学验证规则、版权政策或发布门禁。
+        <strong>这里的“启用”不会启动 AI 调用、部署 Core、批准版权或向儿童发布题目。</strong>
+        未连接授权审核工作流时只保存配置。严禁在 Prompt 中填写 API Key、真实儿童信息或教材原文。
+      </div>
+      <div class="grid top-gap">
+        <div>
+          <label for="mathPromptRole">审核角色</label>
+          <select id="mathPromptRole">
+            <option value="curriculum">课标核对 AI</option>
+            <option value="mathematics">数学正确性 AI</option>
+            <option value="pedagogy">教学设计 AI</option>
+            <option value="rights">内容溯源与版权 AI</option>
+          </select>
+        </div>
+        <div>
+          <label for="mathPromptRevision">草稿 / 当前审核版本</label>
+          <input id="mathPromptRevision" readonly value="尚未加载">
+        </div>
+        <div class="full">
+          <label for="mathPromptText">System Prompt · 可视化编辑</label>
+          <textarea id="mathPromptText" rows="12" spellcheck="true"
+            aria-describedby="mathPromptHelp"
+            placeholder="填写该角色的审核职责、输入约束、输出格式和拒绝条件；保存前不会影响任何运行时。"></textarea>
+          <p id="mathPromptHelp" class="field-note">每个角色独立版本化；正文最多 16 KiB UTF-8（中文约 5,400 字，实际以字节数为准）。禁止儿童个人信息或真实凭据。</p>
+          <p id="mathPromptBytes" class="field-note" aria-live="polite">当前 0 / 16,384 字节</p>
+        </div>
+      </div>
+      <div class="row top-gap">
+        <button id="mathPromptSaveBtn" type="button">保存草稿版本</button>
+        <button id="mathPromptActivateBtn" class="secondary" type="button">设为内部审核版本</button>
+        <button id="mathPromptReloadBtn" class="ghost" type="button">刷新已保存配置</button>
+      </div>
+      <div class="grid top-gap">
+        <div>
+          <label for="mathPromptHistory">历史版本</label>
+          <select id="mathPromptHistory"><option value="">暂无历史</option></select>
+          <p class="field-note">选中历史版本可查看日期、哈希与正文摘录；回滚不会覆盖草稿或修改儿童学习结果。</p>
+          <div id="mathPromptHistoryDetail" class="policy-note" aria-live="polite">选择历史版本查看内容摘要。</div>
+        </div>
+        <div>
+          <label for="mathPromptActiveDigest">审核模板摘要（不含正文）</label>
+          <input id="mathPromptActiveDigest" readonly value="未启用">
+        </div>
+      </div>
+      <div class="row top-gap">
+        <button id="mathPromptRollbackBtn" class="ghost" type="button">回滚到所选版本</button>
+        <button id="mathPromptSuggestedBtn" class="secondary" type="button">载入该角色建议模板（不保存）</button>
+        <button id="mathPromptCheckBtn" class="secondary" type="button">静态检查</button>
+      </div>
+      <div id="mathPromptStatus" class="status top-gap" role="status" aria-live="polite">尚未连接运维配置。</div>
+    </section>
+
     <section id="mengzhengModelPresets" class="card project-module">
       <div class="section-title">
         <div>

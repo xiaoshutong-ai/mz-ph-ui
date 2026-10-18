@@ -41,8 +41,8 @@ h2{font-size:18px;margin:0 0 8px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .full{grid-column:1/-1}
 label{display:block;font-size:13px;font-weight:750;margin:0 0 7px}
-input,select{width:100%;min-height:43px;padding:10px 12px;border:1px solid #cdbda9;border-radius:11px;background:#fff;color:#241b16;font-size:14px;outline:none}
-input:focus,select:focus{border-color:#8f6a4c;box-shadow:0 0 0 3px rgba(143,106,76,.12)}
+input,select,textarea{width:100%;min-height:43px;padding:10px 12px;border:1px solid #cdbda9;border-radius:11px;background:#fff;color:#241b16;font-size:14px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#8f6a4c;box-shadow:0 0 0 3px rgba(143,106,76,.12)}
 input[readonly],input[disabled]{background:#f4efe8;color:#67594e}
 button{border:0;border-radius:11px;padding:11px 15px;font-weight:750;cursor:pointer;background:#654733;color:#fff;transition:transform .12s ease,opacity .12s ease}
 button:hover{transform:translateY(-1px)}
@@ -61,6 +61,9 @@ button.ghost{background:#f7f2ec;color:#6d5a4b;border:1px solid #d9cabb}
 .status{padding:14px;border-radius:12px;background:#f4efe9;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;line-height:1.6}
 .status.ok{background:#edf6ee;border:1px solid #cce1ce}
 .status.bad{background:#faece8;border:1px solid #e6c8c0}
+#mathPromptStudio textarea{min-height:270px;line-height:1.68;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Microsoft YaHei",monospace;}
+#mathPromptStudio textarea:disabled{background:#f4efe8;color:#67594e;}
+#mathPromptStudio .policy-note strong{font-weight:750;}
 .hidden{display:none!important}
 footer{margin-top:24px;text-align:center;color:#998a7f;font-size:11px}
 .public-footer{margin-top:22px;text-align:initial}
