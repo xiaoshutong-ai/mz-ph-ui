@@ -3044,6 +3044,7 @@ async function activateMathPrompt(revision,rollback=false){
 function renderProjectSelection(){
   if(phoneHostPanel)phoneHostPanel.show({projectKey:selectedProjectKey,authorized:!!token&&opsAuthStatus?.aal==="aal2"&&!!membershipFor()});
   const project=membershipFor();
+  $("mathPromptQuickOpenBtn").classList.toggle("hidden",!membershipFor("xiaoshutong"));
   if(!project)return;
 
   $("roleBadge").textContent="角色 · "+String(project.role||"-");
@@ -4050,6 +4051,13 @@ async function applyProjectSelection(){
       $("runtimeConsumerStatus").textContent="Runtime Token 状态加载失败："+error.message;
     });
   }
+  // Deep links are accepted only after normal Ops auth, project membership
+  // and the existing MFA-gated project setup have completed.
+  if(selectedProjectKey==="xiaoshutong"
+    &&window.location.hash==="#mathPromptStudio"
+    &&!$("mathPromptStudio").classList.contains("hidden")){
+    $("mathPromptStudio").scrollIntoView({behavior:"auto",block:"start"});
+  }
 }
 
 async function enterOperationsHub(){
@@ -4324,6 +4332,29 @@ $("aiEntitlementSearch").addEventListener("keydown",event=>{
       $("aiEntitlementSummary").className="status top-gap bad";
       $("aiEntitlementSummary").textContent="搜索失败："+error.message;
     });
+  }
+});
+$("mathPromptQuickOpenBtn").addEventListener("click",async()=>{
+  if(!membershipFor("xiaoshutong"))return;
+  const button=$("mathPromptQuickOpenBtn");
+  button.disabled=true;
+  try{
+    if(selectedProjectKey!=="xiaoshutong"){
+      selectedProjectKey="xiaoshutong";
+      $("projectSelect").value=selectedProjectKey;
+      await applyProjectSelection();
+      loadAgentStatusOps().catch(()=>{});
+    }else if(!mathPromptCatalog){
+      await loadMathPromptStudio(true);
+    }
+    const panel=$("mathPromptStudio");
+    if(panel.classList.contains("hidden"))throw Error("当前身份不可查看小书童配置");
+    panel.scrollIntoView({behavior:"smooth",block:"start"});
+    $("mathPromptRole").focus({preventScroll:true});
+  }catch(error){
+    $("projectIntegrationNote").textContent="打开 AI 教研 Prompt 失败："+error.message;
+  }finally{
+    button.disabled=false;
   }
 });
 $("projectSelect").addEventListener("change",()=>{
