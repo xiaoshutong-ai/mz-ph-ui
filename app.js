@@ -2883,6 +2883,135 @@ async function loadStewardDashboard(days=stewardDashboardDays){
   renderStewardDashboard(response.dashboard||{});
 }
 
+// Goal149: editable prompts are Ops data, not child-facing runtime authority.
+const MATH_PROMPT_ROLES=Object.freeze(["curriculum","mathematics","pedagogy","rights"]);
+const MATH_PROMPT_SAMPLES=Object.freeze({
+  curriculum:"你是小学数学课标核对助手。仅依据给定的、可追溯的2022版数学课标条款，检查学段、领域、能力目标与先修关系。缺少可靠条款时输出 NOT_VERIFIED，不把教材册次当国家统一要求，不签发教师资格或内容发布许可。",
+  mathematics:"你是独立数学审题助手。复核原创题的计算、解法、数量关系、单位、隐藏条件、多解歧义和表达一致性。与可复验计算冲突时报告失败，不以模型投票掩盖问题，不修改学习成绩，不自行发布题目。",
+  pedagogy:"你是小学数学教学设计审核助手。按指定学段分析儿童阅读负担、算理、误区、先修、表征与教学反馈。没有真实学生测量时只给研发建议，不声称掌握度、用时或学习效果已获实证。",
+  rights:"你是原创题库来源与版权审查助手。核查作者、生成规则、引用、相似性风险、商业再利用许可和撤销记录。证据不足返回 RIGHTS_NOT_VERIFIED，不把自称原创当成版权证明，不泄露儿童信息或服务密钥。"
+});
+let mathPromptCatalog=null,mathPromptRole="curriculum",mathPromptDirty=false,mathPromptBusy=false;
+function mathPromptRecord(){
+  return (mathPromptCatalog?.roles||[]).find(x=>x?.role===mathPromptRole)||null;
+}
+function mathPromptPermissions(){
+  const r=String(membershipFor("xiaoshutong")?.role||"");
+  return {edit:["owner","admin","operator"].includes(r),activate:["owner","admin"].includes(r)};
+}
+function mathPromptStatus(message,kind=""){
+  $("mathPromptStatus").className="status top-gap"+(kind?" "+kind:"");
+  $("mathPromptStatus").textContent=message;
+}
+function renderMathPromptStudio(){
+  const visible=selectedProjectKey==="xiaoshutong"&&!!membershipFor("xiaoshutong");
+  $("mathPromptStudio").classList.toggle("hidden",!visible);
+  if(!visible)return;
+  const row=mathPromptRecord(),draft=Number(row?.latest_revision||0);
+  const active=Number(row?.active_revision||0),p=mathPromptPermissions();
+  $("mathPromptRole").value=mathPromptRole;
+  $("mathPromptText").value=String(row?.draft_prompt||"");
+  $("mathPromptRevision").value="草稿 v"+draft+" / 审核 v"+active;
+  $("mathPromptActiveDigest").value=active
+    ?"v"+active+" · "+String(row?.active_sha256||"").slice(0,16)+"…":"未启用";
+  const select=$("mathPromptHistory");
+  select.replaceChildren();
+  for(const v of (Array.isArray(row?.history)?row.history:[])){
+    const option=document.createElement("option");
+    option.value=String(v.revision);
+    option.textContent="v"+v.revision+" · "+String(v.sha256||"").slice(0,12);
+    select.append(option);
+  }
+  if(!select.options.length){
+    const option=document.createElement("option");
+    option.value="";option.textContent="暂无历史";select.append(option);
+  }
+  const ready=!!mathPromptCatalog&&!mathPromptBusy;
+  $("mathPromptText").disabled=!ready||!p.edit;
+  $("mathPromptSaveBtn").disabled=!ready||!p.edit;
+  $("mathPromptSuggestedBtn").disabled=!ready||!p.edit;
+  $("mathPromptActivateBtn").disabled=!ready||!p.activate||draft===0||draft===active;
+  $("mathPromptRollbackBtn").disabled=!ready||!p.activate||active<=1;
+  $("mathPromptHistory").disabled=!ready;
+  $("mathPromptCheckBtn").disabled=!ready;
+  $("mathPromptBadge").textContent=ready?"模板仓已连接 · 消费者未接入":"模板仓不可用";
+  mathPromptDirty=false;
+}
+async function loadMathPromptStudio(force=false){
+  if(selectedProjectKey!=="xiaoshutong")return;
+  if(mathPromptDirty&&!force&&!confirm("放弃未保存的 Prompt 修改并重新加载？"))return;
+  mathPromptBusy=true;
+  mathPromptStatus("正在读取受控审核模板…");
+  try{
+    const response=await api("math_prompt_catalog","GET",null,{project:"xiaoshutong"});
+    const catalog=response.catalog;
+    if(catalog?.schema_version!==1||catalog?.project_key!=="xiaoshutong"
+      ||!Array.isArray(catalog.roles))throw Error("配置合同不可用");
+    mathPromptCatalog=catalog;mathPromptBusy=false;
+    renderMathPromptStudio();
+    mathPromptStatus("已载入配置。审核模板不等于发布资格，模型消费者仍未接入。","ok");
+  }catch(error){
+    mathPromptCatalog=null;mathPromptBusy=false;
+    renderMathPromptStudio();
+    if(selectedProjectKey==="xiaoshutong")mathPromptStatus(
+      "模板仓不可用："+error.message+"；不会使用浏览器数据假装保存。","bad"
+    );
+  }
+}
+function checkMathPrompt(){
+  const text=$("mathPromptText").value;
+  const bytes=new TextEncoder().encode(text).length;
+  if(text.trim().length<40||bytes>16384){
+    mathPromptStatus("拒绝：Prompt 至少40字符，最多16 KiB UTF-8。","bad");return false;
+  }
+  if(/sk-[A-Za-z0-9_-]{20,}|Authorization:\s*Bearer\s+\S+/i.test(text)){
+    mathPromptStatus("拒绝：检测到疑似真实凭据，请勿保存密钥。","bad");return false;
+  }
+  mathPromptStatus("静态检查通过 · "+bytes+"字节。未调用模型、未做教研认证。","ok");
+  return true;
+}
+async function saveMathPrompt(){
+  if(!mathPromptPermissions().edit||!mathPromptCatalog||mathPromptBusy||!checkMathPrompt())return;
+  const role=mathPromptRole,expected=Number(mathPromptRecord()?.latest_revision||0);
+  mathPromptBusy=true;
+  $("mathPromptSaveBtn").disabled=true;
+  try{
+    const result=await api("math_prompt_save","POST",{
+      role,prompt:$("mathPromptText").value,expected_revision:expected
+    },{project:"xiaoshutong"});
+    if(result.saved?.role!==role)throw Error("角色回执不一致");
+    mathPromptDirty=false;await loadMathPromptStudio(true);
+    mathPromptStatus("草稿 v"+result.saved.revision+" 已保存；未启用 AI 或内容发布。","ok");
+  }catch(error){
+    mathPromptStatus("保存失败："+error.message+"；版本冲突时复制草稿再刷新。","bad");
+  }finally{
+    mathPromptBusy=false;
+    $("mathPromptSaveBtn").disabled=!mathPromptCatalog||!mathPromptPermissions().edit;
+  }
+}
+async function activateMathPrompt(revision,rollback=false){
+  if(!mathPromptPermissions().activate||!mathPromptCatalog||mathPromptBusy||mathPromptDirty){
+    mathPromptStatus("请先保存草稿并确认 Owner/Admin 权限。","bad");return;
+  }
+  const role=mathPromptRole,active=Number(mathPromptRecord()?.active_revision||0);
+  if(!Number.isInteger(revision)||revision<1||revision===active||(rollback&&revision>=active)){
+    mathPromptStatus("无有效的"+(rollback?"历史":"待启用")+"版本。","bad");return;
+  }
+  if(!confirm("将内部 AI 审核模板切换到 v"+revision+
+    "；不会启用生产模型、儿童接口或内容发布。确定？"))return;
+  mathPromptBusy=true;
+  try{
+    const x=await api("math_prompt_activate","POST",{
+      role,revision,expected_active_revision:active,confirm_scope:"REVIEW_TEMPLATE_ONLY"
+    },{project:"xiaoshutong"});
+    if(x.activated?.active_revision!==revision)throw Error("服务端版本回执不一致");
+    await loadMathPromptStudio(true);
+    mathPromptStatus((rollback?"回滚":"设置")+"内部审核模板 v"+revision+
+      " 成功；内容发布仍不获授权。","ok");
+  }catch(error){mathPromptStatus("版本切换失败："+error.message,"bad");}
+  finally{mathPromptBusy=false;}
+}
+
 function renderProjectSelection(){
   if(phoneHostPanel)phoneHostPanel.show({projectKey:selectedProjectKey,authorized:!!token&&opsAuthStatus?.aal==="aal2"&&!!membershipFor()});
   const project=membershipFor();
@@ -2913,6 +3042,7 @@ function renderProjectSelection(){
     $(id).classList.toggle("hidden",!isMengzheng);
   }
   $("stewardDashboard").classList.toggle("hidden",!isSteward);
+  $("mathPromptStudio").classList.toggle("hidden",selectedProjectKey!=="xiaoshutong");
 }
 
 function applyOpsStatus(status){
@@ -3885,6 +4015,7 @@ async function applyProjectSelection(){
     await loadStewardDashboard(stewardDashboardDays);
   }else{
     await loadProjectRuntimeConfig();
+    if(selectedProjectKey==="xiaoshutong")await loadMathPromptStudio(true);
     await loadRuntimeConsumerStatus().catch(error=>{
       $("runtimeConsumerStatus").className="status top-gap bad";
       $("runtimeConsumerStatus").textContent="Runtime Token 状态加载失败："+error.message;
@@ -4161,6 +4292,33 @@ $("projectSelect").addEventListener("change",()=>{
   applyProjectSelection().then(()=>loadAgentStatusOps()).catch(error=>{
     $("projectIntegrationNote").textContent="项目切换失败："+error.message;
   });
+});
+$("mathPromptRole").addEventListener("change",()=>{
+  const next=$("mathPromptRole").value;
+  if(!MATH_PROMPT_ROLES.includes(next))return;
+  if(mathPromptDirty&&!confirm("放弃未保存修改并切换审核角色？")){
+    $("mathPromptRole").value=mathPromptRole;return;
+  }
+  mathPromptRole=next;renderMathPromptStudio();
+});
+$("mathPromptText").addEventListener("input",()=>{
+  mathPromptDirty=true;mathPromptStatus("编辑中：尚未保存。");
+});
+$("mathPromptReloadBtn").addEventListener("click",()=>loadMathPromptStudio());
+$("mathPromptSaveBtn").addEventListener("click",saveMathPrompt);
+$("mathPromptCheckBtn").addEventListener("click",checkMathPrompt);
+$("mathPromptSuggestedBtn").addEventListener("click",()=>{
+  if(!mathPromptPermissions().edit)return;
+  if(mathPromptDirty&&!confirm("覆盖当前未保存内容为建议模板？"))return;
+  $("mathPromptText").value=MATH_PROMPT_SAMPLES[mathPromptRole]||"";
+  mathPromptDirty=true;
+  mathPromptStatus("建议模板已载入，可继续编辑；尚未保存。");
+});
+$("mathPromptActivateBtn").addEventListener("click",()=>{
+  activateMathPrompt(Number(mathPromptRecord()?.latest_revision||0));
+});
+$("mathPromptRollbackBtn").addEventListener("click",()=>{
+  activateMathPrompt(Number($("mathPromptHistory").value),true);
 });
 $("runtimeSaveBtn").addEventListener("click",saveProjectRuntimeConfig);
 $("runtimeReloadBtn").addEventListener("click",()=>loadProjectRuntimeConfig().catch(error=>{
