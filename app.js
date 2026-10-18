@@ -2903,6 +2903,26 @@ function mathPromptStatus(message,kind=""){
   $("mathPromptStatus").className="status top-gap"+(kind?" "+kind:"");
   $("mathPromptStatus").textContent=message;
 }
+function updateMathPromptBytes(){
+  const bytes=new TextEncoder().encode($("mathPromptText").value).length;
+  $("mathPromptBytes").textContent="当前 "+bytes.toLocaleString("zh-CN")
+    +" / 16,384 字节"+(bytes>16384?" · 超限，不可保存":"");
+  $("mathPromptBytes").style.color=bytes>16384?"#a3382d":"";
+  return bytes;
+}
+function renderMathPromptHistoryDetail(){
+  const role=mathPromptRecord();
+  const revision=Number($("mathPromptHistory").value||0);
+  const version=(Array.isArray(role?.history)?role.history:[])
+    .find(x=>Number(x.revision)===revision);
+  $("mathPromptHistoryDetail").textContent=version
+    ?["v"+version.revision+" · "+String(version.created_at||""),
+      "摘要 "+String(version.sha256||"")+
+        " · "+String(version.bytes??"未知")+" UTF-8字节",
+      "正文摘录："+String(version.preview||"（历史记录未包含正文预览）")
+    ].join("\n")
+    :"尚无可比较的历史版本。";
+}
 function renderMathPromptStudio(){
   const visible=selectedProjectKey==="xiaoshutong"&&!!membershipFor("xiaoshutong");
   $("mathPromptStudio").classList.toggle("hidden",!visible);
@@ -2911,6 +2931,7 @@ function renderMathPromptStudio(){
   const active=Number(row?.active_revision||0),p=mathPromptPermissions();
   $("mathPromptRole").value=mathPromptRole;
   $("mathPromptText").value=String(row?.draft_prompt||"");
+  updateMathPromptBytes();
   $("mathPromptRevision").value="草稿 v"+draft+" / 审核 v"+active;
   $("mathPromptActiveDigest").value=active
     ?"v"+active+" · "+String(row?.active_sha256||"").slice(0,16)+"…":"未启用";
@@ -2926,6 +2947,7 @@ function renderMathPromptStudio(){
     const option=document.createElement("option");
     option.value="";option.textContent="暂无历史";select.append(option);
   }
+  renderMathPromptHistoryDetail();
   const ready=!!mathPromptCatalog&&!mathPromptBusy;
   $("mathPromptText").disabled=!ready||!p.edit;
   $("mathPromptSaveBtn").disabled=!ready||!p.edit;
@@ -2960,11 +2982,11 @@ async function loadMathPromptStudio(force=false){
 }
 function checkMathPrompt(){
   const text=$("mathPromptText").value;
-  const bytes=new TextEncoder().encode(text).length;
+  const bytes=updateMathPromptBytes();
   if(text.trim().length<40||bytes>16384){
     mathPromptStatus("拒绝：Prompt 至少40字符，最多16 KiB UTF-8。","bad");return false;
   }
-  if(/sk-[A-Za-z0-9_-]{20,}|Authorization:\s*Bearer\s+\S+/i.test(text)){
+  if(/(?:sk-(?:proj-)?[A-Za-z0-9_-]{20,}|github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{16,}|AKIA[0-9A-Z]{16}|(?:api[_-]?key|secret|token)\s*[:=]\s*["']?[A-Za-z0-9_\-]{16,}|Authorization:\s*Bearer\s+\S+)/i.test(text)){
     mathPromptStatus("拒绝：检测到疑似真实凭据，请勿保存密钥。","bad");return false;
   }
   mathPromptStatus("静态检查通过 · "+bytes+"字节。未调用模型、未做教研认证。","ok");
@@ -2997,8 +3019,15 @@ async function activateMathPrompt(revision,rollback=false){
   if(!Number.isInteger(revision)||revision<1||revision===active||(rollback&&revision>=active)){
     mathPromptStatus("无有效的"+(rollback?"历史":"待启用")+"版本。","bad");return;
   }
-  if(!confirm("将内部 AI 审核模板切换到 v"+revision+
-    "；不会启用生产模型、儿童接口或内容发布。确定？"))return;
+  const review=(mathPromptRecord()?.history||[]).find(x=>Number(x.revision)===revision);
+  if(!review){
+    mathPromptStatus("无法读取目标版本的哈希与摘要，请刷新后再操作。","bad");return;
+  }
+  if(!confirm("内部 AI 审核模板切换到 v"+revision
+    +"\nSHA-256: "+String(review.sha256||"")
+    +"\nUTF-8 字节数: "+String(review.bytes??"未知")
+    +"\n正文开头: "+String(review.preview||"（尚未获得内容摘要）").slice(0,140)
+    +"\n不会启用儿童服务、生产模型或内容发布。确定？"))return;
   mathPromptBusy=true;
   try{
     const x=await api("math_prompt_activate","POST",{
@@ -4168,7 +4197,7 @@ function clearSensitiveBrowserState(){
   mathPromptRole="curriculum";
   mathPromptDirty=false;
   mathPromptBusy=false;
-  for(const id of ["mathPromptText","mathPromptRevision","mathPromptActiveDigest"]){
+  for(const id of ["mathPromptText","mathPromptRevision","mathPromptActiveDigest","mathPromptBytes"]){
     const field=$(id);
     if(field&&"value" in field)field.value="";
   }
@@ -4319,8 +4348,9 @@ $("mathPromptRole").addEventListener("change",()=>{
   mathPromptRole=next;renderMathPromptStudio();
 });
 $("mathPromptText").addEventListener("input",()=>{
-  mathPromptDirty=true;mathPromptStatus("编辑中：尚未保存。");
+  mathPromptDirty=true;updateMathPromptBytes();mathPromptStatus("编辑中：尚未保存。");
 });
+$("mathPromptHistory").addEventListener("change",renderMathPromptHistoryDetail);
 $("mathPromptReloadBtn").addEventListener("click",()=>loadMathPromptStudio());
 $("mathPromptSaveBtn").addEventListener("click",saveMathPrompt);
 $("mathPromptCheckBtn").addEventListener("click",checkMathPrompt);
@@ -4328,6 +4358,7 @@ $("mathPromptSuggestedBtn").addEventListener("click",()=>{
   if(!mathPromptPermissions().edit)return;
   if(mathPromptDirty&&!confirm("覆盖当前未保存内容为建议模板？"))return;
   $("mathPromptText").value=MATH_PROMPT_SAMPLES[mathPromptRole]||"";
+  updateMathPromptBytes();
   mathPromptDirty=true;
   mathPromptStatus("建议模板已载入，可继续编辑；尚未保存。");
 });
