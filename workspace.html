@@ -560,10 +560,11 @@
         </div>
         <div class="full">
           <label for="mathPromptText">System Prompt · 可视化编辑</label>
-          <textarea id="mathPromptText" rows="12" maxlength="12000" spellcheck="true"
+          <textarea id="mathPromptText" rows="12" spellcheck="true"
             aria-describedby="mathPromptHelp"
             placeholder="填写该角色的审核职责、输入约束、输出格式和拒绝条件；保存前不会影响任何运行时。"></textarea>
-          <p id="mathPromptHelp" class="field-note">每个角色独立版本化，最多 12,000 字符 / 16 KiB；只保存模板，不含实际学生题目或个人信息。</p>
+          <p id="mathPromptHelp" class="field-note">每个角色独立版本化；正文最多 16 KiB UTF-8（中文约 5,400 字，实际以字节数为准）。禁止儿童个人信息或真实凭据。</p>
+          <p id="mathPromptBytes" class="field-note" aria-live="polite">当前 0 / 16,384 字节</p>
         </div>
       </div>
       <div class="row top-gap">
@@ -575,7 +576,8 @@
         <div>
           <label for="mathPromptHistory">历史版本</label>
           <select id="mathPromptHistory"><option value="">暂无历史</option></select>
-          <p class="field-note">选择历史版本后仅回滚内部审核模板指针；不会回滚儿童学习结果或覆盖草稿。</p>
+          <p class="field-note">选中历史版本可查看日期、哈希与正文摘录；回滚不会覆盖草稿或修改儿童学习结果。</p>
+          <div id="mathPromptHistoryDetail" class="policy-note" aria-live="polite">选择历史版本查看内容摘要。</div>
         </div>
         <div>
           <label for="mathPromptActiveDigest">审核模板摘要（不含正文）</label>
